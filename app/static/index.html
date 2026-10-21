@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Torb Scout | دستیار خرید حضوری</title>
+  <meta name="description" content="دستیار هوشمند خرید حضوری از فروشگاه‌های تهران، بر پایه‌ی دیتاست چالش ترب">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true"><span>TS</span></div>
+        <div>
+          <div class="brand-name">Torb Scout</div>
+          <div class="brand-subtitle">دستیار خرید حضوری تهران</div>
+        </div>
+      </div>
+      <div class="topbar-status">
+        <span class="status-dot"></span>
+        <span>عامل آماده‌ی جست‌وجو</span>
+        <span class="status-divider"></span>
+        <span class="catalog-stat" id="catalogStat">در حال اتصال به کاتالوگ…</span>
+      </div>
+      <button class="icon-button" id="openAbout" aria-label="درباره‌ی Torb Scout">?</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-dot"></span> خرید حضوری، با شواهد</div>
+          <h1>قبل از حرکت،<br><em>هوشمندانه انتخاب کن.</em></h1>
+          <p>محصول را بگو؛ عامل بین قیمت، فاصله، تازگی داده و شرایط فروشنده جست‌وجو می‌کند و مسیر تصمیم‌گیری را شفاف نشان می‌دهد.</p>
+        </div>
+        <form class="search-bar" id="searchForm">
+          <div class="search-icon" aria-hidden="true">⌕</div>
+          <input id="searchInput" autocomplete="off" placeholder="مثلاً گوشی سامسونگ تا ۲۰ میلیون نزدیک فردوسی" aria-label="جست‌وجوی محصول">
+          <button class="search-submit" type="submit">جست‌وجو <span>↵</span></button>
+        </form>
+        <div class="quick-prompts" id="quickPrompts">
+          <span>شروع سریع:</span>
+          <button type="button" data-prompt="گوشی موبایل تا ۲۰ میلیون نزدیک فردوسی">گوشی تا ۲۰ میلیون</button>
+          <button type="button" data-prompt="هدفون بی‌سیم با مقایسه‌ی قیمت و گارانتی">هدفون بی‌سیم</button>
+          <button type="button" data-prompt="یک گزینه‌ی اقتصادی نزدیک شیخ هادی">نزدیک شیخ هادی</button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="filter-panel panel">
+          <div class="panel-heading">
+            <div>
+              <div class="section-kicker">کنترل تصمیم</div>
+              <h2>فیلترهای خرید</h2>
+            </div>
+            <button class="text-button" id="resetFilters">پاک‌کردن</button>
+          </div>
+          <div class="filter-group">
+            <label for="budgetInput">سقف بودجه <span class="unit">تومان</span></label>
+            <div class="money-input">
+              <input id="budgetInput" inputmode="numeric" placeholder="بدون محدودیت">
+              <span>تومان</span>
+            </div>
+            <div class="range-hints"><span>اقتصادی</span><span>حرفه‌ای</span></div>
+          </div>
+          <div class="filter-group">
+            <label for="locationSelect">محدوده‌ی مراجعه</label>
+            <select id="locationSelect">
+              <option value="">همه‌ی تهران</option>
+            </select>
+            <div class="select-caption">فقط فروشگاه‌هایی که محدوده را در داده ثبت کرده‌اند.</div>
+          </div>
+          <div class="filter-group">
+            <div class="label-row"><label for="radiusInput">شعاع جست‌وجو</label><strong><span id="radiusValue">۸</span> کیلومتر</strong></div>
+            <input id="radiusInput" type="range" min="1" max="20" value="8">
+            <div class="range-hints"><span>۱ km</span><span>۲۰ km</span></div>
+          </div>
+          <div class="filter-group">
+            <label for="sortSelect">اولویت مرتب‌سازی</label>
+            <select id="sortSelect">
+              <option value="relevance">پیشنهاد عامل</option>
+              <option value="fresh">تازه‌ترین تغییر قیمت</option>
+              <option value="shops">بیشترین فروشنده</option>
+            </select>
+          </div>
+          <div class="filter-note">
+            <span class="note-icon">i</span>
+            <p>قیمت ثبت‌شده با موجودی لحظه‌ای یکی نیست. برای تصمیم نهایی، تماس با فروشنده را در نظر بگیر.</p>
+          </div>
+          <div class="data-trust">
+            <div class="trust-icon">⌁</div>
+            <div><strong>کاتالوگ چالش ترب</strong><span id="dataTrustText">در حال آماده‌سازی…</span></div>
+            <span class="trust-check">✓</span>
+          </div>
+        </aside>
+
+        <section class="results-column">
+          <div class="results-toolbar">
+            <div>
+              <div class="section-kicker">نتیجه‌ی جست‌وجو</div>
+              <h2 id="resultsTitle">برای شروع، یک نیاز خرید بنویس</h2>
+            </div>
+            <div class="toolbar-actions">
+              <span class="result-count" id="resultCount"></span>
+              <button class="view-toggle active" data-view="grid" aria-label="نمای شبکه‌ای">▦</button>
+              <button class="view-toggle" data-view="list" aria-label="نمای فهرستی">≡</button>
+            </div>
+          </div>
+          <div class="agent-trace" id="agentTrace" hidden>
+            <div class="trace-label">مسیر تصمیم عامل</div>
+            <div class="trace-steps" id="traceSteps"></div>
+          </div>
+          <div class="results-layout">
+            <div class="product-grid" id="productGrid">
+              <div class="empty-state">
+                <div class="empty-orbit"><span>⌕</span></div>
+                <h3>هنوز چیزی جست‌وجو نشده</h3>
+                <p>یک محصول، بودجه یا محدوده را بگو تا گزینه‌های قابل مراجعه را پیدا کنم.</p>
+              </div>
+            </div>
+            <aside class="map-panel panel">
+              <div class="map-heading">
+                <div><div class="section-kicker">پراکندگی فروشنده‌ها</div><h3>روی نقشه‌ی تهران</h3></div>
+                <span class="map-count" id="mapCount">۰ فروشگاه</span>
+              </div>
+              <div class="map-canvas" id="mapCanvas">
+                <div class="map-grid-line line-a"></div><div class="map-grid-line line-b"></div>
+                <div class="map-label map-label-n">شمال</div><div class="map-label map-label-s">جنوب</div>
+                <div class="map-label map-label-w">غرب</div><div class="map-label map-label-e">شرق</div>
+                <div class="map-center">تهران</div>
+              </div>
+              <div class="shop-list" id="shopList"><div class="shop-list-empty">پس از جست‌وجو فروشگاه‌ها اینجا دیده می‌شوند.</div></div>
+            </aside>
+          </div>
+        </section>
+
+        <aside class="assistant-panel panel">
+          <div class="assistant-header">
+            <div class="agent-avatar"><span>✦</span></div>
+            <div><h2>همراه خرید</h2><span><i></i> آنلاین و آماده‌ی پیگیری</span></div>
+            <button class="icon-button small" id="clearChat" aria-label="پاک‌کردن گفت‌وگو">↺</button>
+          </div>
+          <div class="conversation" id="conversation">
+            <div class="message agent-message">
+              <div class="message-badge">TS</div>
+              <div>
+                <p>سلام! دنبال چه محصولی هستی؟ بودجه، محله یا شرطی مثل گارانتی و ارسال فوری را هم بگو تا نتیجه‌ها دقیق‌تر شوند.</p>
+                <div class="message-sources"><span>●</span> اتصال به کاتالوگ ترب</div>
+              </div>
+            </div>
+          </div>
+          <div class="assistant-suggestions" id="assistantSuggestions">
+            <button data-prompt="گوشی موبایل تا ۲۰ میلیون نزدیک فردوسی">گوشی تا ۲۰ میلیون</button>
+            <button data-prompt="هدفون بی‌سیم با گارانتی">با گارانتی</button>
+          </div>
+          <form class="assistant-input" id="assistantForm">
+            <input id="assistantInput" placeholder="نیاز خریدت را بنویس…" autocomplete="off" aria-label="پیام به همراه خرید">
+            <button type="submit" aria-label="ارسال پیام">↑</button>
+          </form>
+        </aside>
+      </section>
+    </main>
+
+    <div class="compare-tray" id="compareTray" hidden>
+      <div><strong><span id="compareCount">۰</span> گزینه برای مقایسه</strong><span>تا سه گزینه را کنار هم ببین.</span></div>
+      <button class="secondary-button" id="clearCompare">پاک‌کردن</button>
+      <button class="primary-button" id="openCompare">مقایسه‌ی گزینه‌ها <span>←</span></button>
+    </div>
+
+    <div class="modal-backdrop" id="compareModal" hidden>
+      <div class="modal panel">
+        <button class="modal-close" id="closeCompare" aria-label="بستن">×</button>
+        <div class="section-kicker">تصمیم قابل توضیح</div>
+        <h2>مقایسه‌ی گزینه‌ها</h2>
+        <p class="modal-lead">هر عدد از همان داده‌ای می‌آید که روی کارت محصول دیده‌ای؛ ابهام‌ها هم آشکار می‌مانند.</p>
+        <div class="compare-table-wrap"><table class="compare-table"><thead id="compareHead"></thead><tbody id="compareBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="aboutModal" hidden>
+      <div class="modal panel about-modal">
+        <button class="modal-close" id="closeAbout" aria-label="بستن">×</button>
+        <div class="about-mark">TS</div>
+        <div class="section-kicker">درباره‌ی محصول</div>
+        <h2>Torb Scout</h2>
+        <p>یک نمونه‌ی اولیه برای چالش ترب: عامل خرید، بین جست‌وجوی محصول، مقایسه‌ی فروشنده‌ها و انتخاب محدوده ابزارها را زنجیره می‌کند و دلیل پیشنهاد را نشان می‌دهد.</p>
+        <div class="about-points"><div><b>۱</b><span>فهم درخواست و استخراج محدودیت‌ها</span></div><div><b>۲</b><span>اتصال محصولات، آفرها و فروشگاه‌ها</span></div><div><b>۳</b><span>رتبه‌بندی قیمت، تازگی و فاصله</span></div></div>
+        <p class="about-footnote">نسخه‌ی دمو با داده‌ی خروجی CSV چالش ترب کار می‌کند. موجودی لحظه‌ای نیازمند تماس با فروشنده است.</p>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
