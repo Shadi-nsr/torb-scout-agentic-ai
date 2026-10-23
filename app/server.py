@@ -42,6 +42,101 @@ STOP_WORDS = {
     "گارانتی", "گارانتی‌دار", "ارسال", "فوری", "قسطی", "کالابرگ",
 }
 
+# This is a small, explicit layer of general Tehran shopping knowledge. It is
+# deliberately kept separate from the challenge snapshot: product, price and
+# seller claims still come only from the CSV dataset, while this layer helps a
+# user recover when the requested item is not found there.
+MARKET_GUIDES = (
+    {
+        "terms": ("گوشی", "موبایل", "آیفون"),
+        "title": "راسته‌ی موبایل جمهوری و علاءالدین",
+        "area": "جمهوری / علاءالدین",
+        "lat": 35.6978,
+        "lon": 51.4115,
+        "why": "برای مقایسه‌ی حضوری گوشی و لوازم دیجیتال، این محدوده یکی از گزینه‌های عمومی تهران است.",
+    },
+    {
+        "terms": ("لپ تاپ", "لپ", "کامپیوتر", "مانیتور", "هدفون", "دوربین"),
+        "title": "مرکز دیجیتال جمهوری و شیخ هادی",
+        "area": "جمهوری / شیخ هادی",
+        "lat": 35.6964,
+        "lon": 51.4087,
+        "why": "برای پیدا کردن چند فروشنده‌ی کالای دیجیتال در یک مسیر پیاده، این راسته نقطه‌ی شروع مناسبی است.",
+    },
+    {
+        "terms": ("موتور برق", "ژنراتور", "برق اضطراری"),
+        "title": "راسته‌ی تجهیزات برق امیرکبیر",
+        "area": "امیرکبیر",
+        "lat": 35.6848,
+        "lon": 51.4294,
+        "why": "برای تجهیزات برق، ژنراتور و موتور برق می‌توان چند فروشنده‌ی تخصصی را در این محدوده بررسی کرد.",
+    },
+    {
+        "terms": ("سیم", "کابل", "برق ساختمان"),
+        "title": "راسته‌ی برق لاله‌زار",
+        "area": "لاله‌زار",
+        "lat": 35.6886,
+        "lon": 51.4278,
+        "why": "برای سیم، کابل و تجهیزات برق ساختمان، این راسته‌ی عمومی می‌تواند جایگزین جست‌وجوی بدون نتیجه باشد.",
+    },
+    {
+        "terms": ("ابزار", "دریل", "پیچ گوشتی", "یراق"),
+        "title": "راسته‌ی ابزار حسن‌آباد",
+        "area": "حسن‌آباد",
+        "lat": 35.6878,
+        "lon": 51.4098,
+        "why": "برای ابزار و یراق، حسن‌آباد یک نقطه‌ی شناخته‌شده برای مقایسه‌ی حضوری است.",
+    },
+    {
+        "terms": ("لباس", "پوشاک", "کفش", "کیف"),
+        "title": "بازار بزرگ تهران و راسته‌ی پوشاک",
+        "area": "بازار بزرگ تهران",
+        "lat": 35.6762,
+        "lon": 51.4231,
+        "why": "برای پوشاک و کفش، بازار بزرگ امکان مقایسه‌ی چند فروشنده در یک محدوده را می‌دهد.",
+    },
+)
+
+
+def market_suggestions(parsed):
+    text = normalize_fa(parsed.get("raw", ""))
+    suggestions = []
+    for guide in MARKET_GUIDES:
+        if any(term in text for term in guide["terms"]):
+            item = {key: guide[key] for key in ("title", "area", "lat", "lon", "why")}
+            item["source"] = "راهنمای عمومی بازار تهران؛ خارج از snapshot چالش"
+            item["source_time"] = "نسخه‌ی ثابت دمو؛ بدون اتصال زنده"
+            item["confidence"] = "راهنمای عمومی، نیازمند راستی‌آزمایی"
+            item["disclaimer"] = "این کارت فقط راهنمای ناحیه است و فروش، قیمت یا موجودی را تضمین نمی‌کند."
+            item["map_url"] = "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(
+                f"{guide['title']} تهران"
+            )
+            suggestions.append(item)
+            if len(suggestions) == 2:
+                break
+    return suggestions
+
+
+def review_guidance(title, category):
+    """Return honest review guidance without inventing a user rating."""
+    text = normalize_fa(f"{title} {category}")
+    if "گوشی" in text or "موبایل" in text:
+        checks = ["رجیستری و اصالت دستگاه", "سلامت باتری و نمایشگر", "شرایط گارانتی و مهلت تست"]
+    elif "لپ تاپ" in text or "کامپیوتر" in text:
+        checks = ["سلامت باتری و شارژر", "تست نمایشگر و کیبورد", "سریال، گارانتی و مهلت تست"]
+    elif "موتور برق" in text or "ژنراتور" in text:
+        checks = ["تست روشن‌شدن زیر بار", "توان واقعی و صدای دستگاه", "گارانتی، قطعات و خدمات"]
+    else:
+        checks = ["اصالت و سلامت کالا", "شرایط گارانتی و مهلت تست", "امکان تعویض یا مرجوعی"]
+    return {
+        "status": "unknown",
+        "label": "نظر کاربر در دیتاست ثبت نشده",
+        "message": "برای این محصول امتیاز یا review معتبر در فایل چالش نداریم؛ عامل نظر ساختگی تولید نمی‌کند.",
+        "checks": checks,
+        "source": "دیتاست اصلاحی ترب؛ ستون review در snapshot وجود ندارد",
+        "external_search_url": "https://www.google.com/search?q=" + urllib.parse.quote(f"{title} review"),
+    }
+
 
 def normalize_digits(value):
     return (value or "").translate(PERSIAN_DIGITS).replace("٬", ",")
@@ -229,9 +324,11 @@ class Catalog:
             ("p6", "کابل افشان برق ساختمان ۲.۵", "خراسان", "سیم و کابل برق ساختمان", "", "[]", "[]"),
         ]
         shops = [
-            ("s1", "فروشگاه نمونه فردوسی", "خیابان فردوسی، پاساژ نمونه", "[]", "[]", None, 35.703, 51.414, "فردوسی", "[]", 1, None, "{}"),
-            ("s2", "بازار دیجیتال شیخ هادی", "خیابان جمهوری، شیخ هادی", "[]", "[]", None, 35.695, 51.409, "شیخ هادی", "[]", 0, None, "{}"),
-            ("s3", "فروشگاه نمونه بهارستان", "بهارستان، مرکز خرید نمونه", "[]", "[]", None, 35.687, 51.423, "بهارستان", "[]", 1, None, "{}"),
+            # Deliberately marked as demo contacts: the UI can exercise the
+            # call path without implying that these numbers are real shops.
+            ("s1", "فروشگاه نمونه فردوسی", "خیابان فردوسی، پاساژ نمونه", "[]", '[{"channel":"phone","display_number":"۰۲۱۰۰۰۰۰۰۰۱","mock":true}]', None, 35.703, 51.414, "فردوسی", "[]", 1, None, "{}"),
+            ("s2", "بازار دیجیتال شیخ هادی", "خیابان جمهوری، شیخ هادی", "[]", '[{"channel":"phone","display_number":"۰۲۱۰۰۰۰۰۰۰۲","mock":true}]', None, 35.695, 51.409, "شیخ هادی", "[]", 0, None, "{}"),
+            ("s3", "فروشگاه نمونه بهارستان", "بهارستان، مرکز خرید نمونه", "[]", '[{"channel":"phone","display_number":"۰۲۱۰۰۰۰۰۰۰۳","mock":true}]', None, 35.687, 51.423, "بهارستان", "[]", 1, None, "{}"),
         ]
         offers = [
             ("o1", "p1", "s1", 18900000, "A55 256GB", "", "۱۸ ماه", "2026-10-18T08:00:00+00:00", 1, "valid"),
@@ -348,6 +445,11 @@ class Catalog:
             if center:
                 item["distance_km"] = round(haversine(center[0], center[1], item["lat"], item["lon"]) or 0, 1)
             item["contacts"] = parse_json(item.get("contacts"), [])
+            item["source"] = {
+                "name": "Torb snapshot",
+                "kind": "dataset",
+                "review_status": "بدون بررسی بیرونی؛ قبل از حرکت تماس بگیر",
+            }
             item["payment_options"] = parse_json(item.get("payment_options"), [])
             item["weekly_hours"] = parse_json(item.get("weekly_hours"), {})
             item["open_status"] = shop_hours_status(json.dumps(item["weekly_hours"], ensure_ascii=False))
@@ -362,9 +464,59 @@ class Catalog:
                 result = within
         return result[:5]
 
+    def market_guidance(self, parsed):
+        """Suggest shopping areas, preferring evidence from the challenge data."""
+        suggestions = []
+        terms = parsed.get("tokens") or []
+        domain_terms = [
+            term for term in terms
+            if any(term in guide_term or guide_term in term for guide in MARKET_GUIDES for guide_term in guide["terms"])
+        ]
+        if domain_terms:
+            terms = domain_terms
+        if terms and not self.sample_mode:
+            clauses = []
+            params = []
+            for term in terms:
+                clauses.append("(p.title LIKE ? OR p.category LIKE ? OR p.brand LIKE ?)")
+                params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
+            joiner = " AND " if len(terms) > 1 else " OR "
+            sql = (
+                "SELECT s.location_label, count(DISTINCT s.shop_id) AS shops, "
+                "avg(s.lat) AS lat, avg(s.lon) AS lon "
+                "FROM products p JOIN offers o ON o.product_id=p.product_id "
+                "JOIN shops s ON s.shop_id=o.shop_id WHERE o.price_valid=1 "
+                "AND s.location_label IS NOT NULL AND (" + joiner.join(clauses) + ") "
+                "GROUP BY s.location_label ORDER BY shops DESC LIMIT 2"
+            )
+            try:
+                rows = self.conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            for row in rows:
+                location = row["location_label"]
+                suggestions.append({
+                    "title": f"فروشگاه‌های مرتبط در {location}",
+                    "area": location,
+                    "lat": row["lat"],
+                    "lon": row["lon"],
+                    "why": f"در snapshot ترب، {int(row['shops'] or 0):,} فروشگاه برای این عبارت در این محدوده آفر معتبر دارند.",
+                    "source": "داده‌ی اصلاحی ترب؛ شمارش فروشگاه‌های دارای آفر معتبر",
+                    "source_time": "همین snapshot محلی پس از ingest",
+                    "confidence": "بالا برای شمارش داده؛ موجودی لحظه‌ای نیست",
+                    "disclaimer": "این کارت از داده‌ی چالش ساخته شده و فروش، قیمت یا موجودی لحظه‌ای را تضمین نمی‌کند.",
+                    "map_url": "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(f"{location} تهران"),
+                })
+        known = {item["area"] for item in suggestions}
+        for item in market_suggestions(parsed):
+            if item["area"] not in known:
+                suggestions.append(item)
+        return suggestions[:3]
+
     def search(self, message="", filters=None):
         filters = filters or {}
-        parsed = parse_request(message, self.locations)
+        requested = parse_request(message, self.locations)
+        parsed = dict(requested)
         if filters.get("budget_max"):
             parsed["budget_max"] = float(filters["budget_max"])
         if filters.get("location"):
@@ -376,6 +528,32 @@ class Catalog:
             center = (float(filters["lat"]), float(filters["lon"]))
         relevance_mode = filters.get("sort", "relevance") == "relevance"
         rows = self._candidate_rows(parsed, filters.get("sort", "relevance"), 2000 if relevance_mode else 120)
+        fallback = {"used": False, "reason": None, "relaxed": []}
+        # A narrow location/budget is useful when it matches, but should not
+        # turn the whole experience into an empty state. Retry once without
+        # the most restrictive constraint and expose that decision to the UI.
+        if not rows and (parsed.get("location") or parsed.get("budget_max")):
+            variants = []
+            if parsed.get("location"):
+                variant = dict(parsed)
+                variant["location"] = None
+                variants.append((variant, "location"))
+            if parsed.get("budget_max"):
+                variant = dict(parsed)
+                variant["budget_max"] = None
+                variants.append((variant, "budget"))
+            for variant, relaxed in variants:
+                candidate_rows = self._candidate_rows(variant, filters.get("sort", "relevance"), 2000 if relevance_mode else 120)
+                if candidate_rows:
+                    parsed = variant
+                    rows = candidate_rows
+                    fallback = {
+                        "used": True,
+                        "reason": "strict_filters_empty",
+                        "relaxed": [relaxed],
+                        "message": "با باز کردن این محدودیت، گزینه‌های نزدیک‌تر پیدا شد.",
+                    }
+                    break
         if relevance_mode and parsed.get("tokens"):
             terms = parsed["tokens"]
             def relevance(row):
@@ -439,6 +617,7 @@ class Catalog:
             item["image_url"] = product_image(row["image_urls"])
             item["offers"] = offers
             item["specs"] = parse_json(row["specs"], [])
+            item["review_guidance"] = review_guidance(item["title"], item["category"])
             item["valid_offer_count"] = len(offers)
             item["price_confidence"] = "چند آفر معتبر" if len(offers) > 1 else "یک آفر معتبر"
             item["reasons"] = []
@@ -464,7 +643,32 @@ class Catalog:
             items.sort(key=lambda item: any(offer.get("supports_fast_delivery") == 1 for offer in item.get("offers", [])), reverse=True)
         if requirements.get("installment"):
             items.sort(key=lambda item: any(offer.get("payment_options") for offer in item.get("offers", [])), reverse=True)
-        return {"query": parsed, "results": items, "total": len(items), "meta": self.meta()}
+        # The fallback can still produce no offers when every candidate has
+        # been filtered out by price quality. Keep the reason explicit for
+        # callers and for review of the decision trace.
+        if not items and not fallback["used"] and (requested.get("location") or requested.get("budget_max")):
+            fallback = {
+                "used": True,
+                "reason": "no_valid_offer",
+                "relaxed": [],
+                "message": "برای این محدودیت‌ها آفر معتبر ثبت نشده است.",
+            }
+        if not items and not fallback["used"]:
+            fallback = {
+                "used": True,
+                "reason": "no_catalog_match",
+                "relaxed": [],
+                "message": "در کاتالوگ برای این عبارت آفر معتبر پیدا نشد.",
+            }
+        return {
+            "query": parsed,
+            "requested_query": requested,
+            "results": items,
+            "total": len(items),
+            "meta": self.meta(),
+            "fallback": fallback,
+            "market_suggestions": self.market_guidance(requested) if not items else [],
+        }
 
 
 catalog = Catalog(DB_PATH)
@@ -490,8 +694,13 @@ def agent_reply(message, filters=None, selected_ids=None):
         if parsed.get("budget_max"):
             answer += f" سقف بودجه‌ی {int(parsed['budget_max']):,} تومان هم اعمال شد."
         answer += " قیمت snapshot است و موجودی لحظه‌ای را تضمین نمی‌کند؛ قبل از حرکت، ساعت کاری و تماس با فروشنده را بررسی کن."
+        if result.get("fallback", {}).get("used"):
+            answer += " برای اینکه صفحه خالی نماند، یک محدودیت جست‌وجو بازتر شد؛ این موضوع در شواهد نتیجه ثبت شده است."
     else:
-        answer = "با این ترکیب محدودیت نتیجه‌ی قابل اتکا پیدا نکردم. می‌توانی بودجه، محدوده یا عبارت محصول را کمی بازتر کنی."
+        answer = "برای این ترکیب در آفرهای معتبر ترب نتیجه‌ی قابل اتکا پیدا نکردم."
+        if result.get("market_suggestions"):
+            answer += " یک راهنمای ناحیه‌ای جدا از نتایج دیتاست آماده کردم تا اگر خواستی جست‌وجوی حضوری را ادامه بدهی."
+        answer += " بودجه، محدوده یا عبارت محصول را هم می‌توانی کمی بازتر کنی."
     return {
         "reply": answer,
         "plan": plan,
@@ -505,10 +714,18 @@ def agent_reply(message, filters=None, selected_ids=None):
         ],
         "evidence": {
             "catalog_rows": result["meta"],
+            "fallback": result.get("fallback", {"used": False}),
+            "sources": [
+                {"name": "Torb snapshot", "kind": "dataset", "status": "used"},
+                {"name": "External reviews", "kind": "external", "status": "not_connected", "note": "امتیاز بیرونی بدون اتصال زنده نمایش داده نمی‌شود."},
+            ],
             "selected_ids": selected_ids,
             "freshness_policy": "آخرین زمان تغییر قیمت نمایش داده می‌شود؛ موجودی تأیید نشده تلقی می‌شود.",
             "price_policy": "قیمت‌های خالی، کمتر از ۱٬۰۰۰ یا بیشتر از ۱٬۰۰۰٬۰۰۰٬۰۰۰٬۰۰۰ تومان وارد رتبه‌بندی نمی‌شوند.",
+            "dataset_first": "محصول و آفر فقط از دیتاست اصلاحی ترب انتخاب می‌شود؛ راهنمای ناحیه‌ای بیرونی جدا و برچسب‌دار است.",
+            "review_policy": "امتیاز یا review بدون منبع ساخته نمی‌شود؛ در نبود داده، چک‌لیست راستی‌آزمایی نشان داده می‌شود.",
         },
+        "market_suggestions": result.get("market_suggestions", []),
     }
 
 
@@ -565,7 +782,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "محصول پیدا نشد"}, HTTPStatus.NOT_FOUND)
             parsed = {"budget_max": None, "location": None, "radius_km": 8.0}
             offers = catalog._offers(product_id, parsed, None)
-            return self._json({"product": dict(row), "offers": offers})
+            product = dict(row)
+            product["specs"] = parse_json(product.get("specs"), [])
+            product["review_guidance"] = review_guidance(product.get("title", ""), product.get("category", ""))
+            return self._json({"product": product, "offers": offers})
         if path == "/" or path == "/index.html":
             return self._file(STATIC / "index.html", "text/html; charset=utf-8")
         if path.startswith("/static/"):
@@ -597,6 +817,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(
                 agent_reply(message, payload.get("filters"), payload.get("selected_ids"))
             )
+        if path == "/api/contact":
+            # A deterministic, local call hand-off for the demo. It never
+            # contacts a shop or claims that stock was confirmed.
+            shop_id = str(payload.get("shop_id", "")).strip()
+            row = catalog.conn.execute(
+                "SELECT shop_id,name,contacts FROM shops WHERE shop_id=?", (shop_id,)
+            ).fetchone()
+            if not row:
+                return self._json({"error": "فروشنده پیدا نشد"}, HTTPStatus.NOT_FOUND)
+            contacts = parse_json(row["contacts"], [])
+            phone = next((item for item in contacts if item.get("channel") == "phone"), None)
+            return self._json({
+                "ok": True,
+                "mode": "mock",
+                "status": "ready_to_call" if phone else "no_phone",
+                "shop_id": shop_id,
+                "shop_name": row["name"],
+                "contact": phone,
+                "message": "این تماس در نسخه‌ی نمایشی شبیه‌سازی شده و موجودی را تأیید نمی‌کند.",
+            })
         if path == "/api/telemetry":
             # Keep demo telemetry local and anonymous. It is useful in the demo
             # to show that every recommendation has an auditable decision path.
