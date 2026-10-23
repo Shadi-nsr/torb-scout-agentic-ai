@@ -92,13 +92,17 @@
             <div><strong>کاتالوگ چالش ترب</strong><span id="dataTrustText">در حال آماده‌سازی…</span></div>
             <span class="trust-check">✓</span>
           </div>
+          <div class="quality-strip" id="qualityStrip" hidden>
+            <span class="quality-icon">✓</span>
+            <div><strong>قیمت‌های پاک‌سازی‌شده</strong><span id="qualityText">—</span></div>
+          </div>
         </aside>
 
         <section class="results-column">
           <div class="results-toolbar">
             <div>
               <div class="section-kicker">نتیجه‌ی جست‌وجو</div>
-              <h2 id="resultsTitle">برای شروع، یک نیاز خرید بنویس</h2>
+              <h2 id="resultsTitle" aria-live="polite">برای شروع، یک نیاز خرید بنویس</h2>
             </div>
             <div class="toolbar-actions">
               <span class="result-count" id="resultCount"></span>
@@ -109,6 +113,10 @@
           <div class="agent-trace" id="agentTrace" hidden>
             <div class="trace-label">مسیر تصمیم عامل</div>
             <div class="trace-steps" id="traceSteps"></div>
+          </div>
+          <div class="evidence-banner" id="evidenceBanner" hidden>
+            <span class="evidence-icon">✓</span>
+            <div><strong>چرا این گزینه‌ها؟</strong><span id="evidenceText">هر نتیجه به قیمت معتبر، فروشنده و زمان تغییر قیمت متصل است.</span></div>
           </div>
           <div class="results-layout">
             <div class="product-grid" id="productGrid">
@@ -186,6 +194,16 @@
         <p>یک نمونه‌ی اولیه برای چالش ترب: عامل خرید، بین جست‌وجوی محصول، مقایسه‌ی فروشنده‌ها و انتخاب محدوده ابزارها را زنجیره می‌کند و دلیل پیشنهاد را نشان می‌دهد.</p>
         <div class="about-points"><div><b>۱</b><span>فهم درخواست و استخراج محدودیت‌ها</span></div><div><b>۲</b><span>اتصال محصولات، آفرها و فروشگاه‌ها</span></div><div><b>۳</b><span>رتبه‌بندی قیمت، تازگی و فاصله</span></div></div>
         <p class="about-footnote">نسخه‌ی دمو با داده‌ی خروجی CSV چالش ترب کار می‌کند. موجودی لحظه‌ای نیازمند تماس با فروشنده است.</p>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="productModal" hidden>
+      <div class="modal panel product-modal">
+        <button class="modal-close" id="closeProduct" aria-label="بستن">×</button>
+        <div class="section-kicker">راهنمای مراجعه</div>
+        <h2 id="productModalTitle">جزئیات محصول</h2>
+        <p class="modal-lead" id="productModalLead">فروشنده‌ها، ساعت کاری ثبت‌شده و اطلاعاتی که قبل از حرکت باید بررسی شوند.</p>
+        <div class="offer-list" id="offerList"></div>
       </div>
     </div>
   </div>
