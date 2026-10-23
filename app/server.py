@@ -818,9 +818,11 @@ class Handler(BaseHTTPRequestHandler):
                 agent_reply(message, payload.get("filters"), payload.get("selected_ids"))
             )
         if path == "/api/contact":
-            # A deterministic, local call hand-off for the demo. It never
-            # contacts a shop or claims that stock was confirmed.
+            # A deterministic, local hand-off for the demo. It never contacts
+            # a shop or claims that stock was confirmed; the user can copy the
+            # prepared message/number and use their own phone if needed.
             shop_id = str(payload.get("shop_id", "")).strip()
+            channel = str(payload.get("channel", "mock_call")).strip()
             row = catalog.conn.execute(
                 "SELECT shop_id,name,contacts FROM shops WHERE shop_id=?", (shop_id,)
             ).fetchone()
@@ -831,11 +833,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "ok": True,
                 "mode": "mock",
+                "channel": channel if channel in ("mock_call", "mock_message") else "mock_call",
                 "status": "ready_to_call" if phone else "no_phone",
                 "shop_id": shop_id,
                 "shop_name": row["name"],
                 "contact": phone,
-                "message": "این تماس در نسخه‌ی نمایشی شبیه‌سازی شده و موجودی را تأیید نمی‌کند.",
+                "message": "این ارتباط در نسخه‌ی نمایشی شبیه‌سازی شده است؛ کاربر می‌تواند پیام یا شماره‌ی نمونه را از گوشی خودش استفاده کند، اما تماس واقعی و موجودی تأیید نمی‌شود.",
             })
         if path == "/api/telemetry":
             # Keep demo telemetry local and anonymous. It is useful in the demo
