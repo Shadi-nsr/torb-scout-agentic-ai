@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Torb Scout: a dependency-free demo server for the Tarb challenge."""
+"""Torbche: a dependency-free demo server for the Torob challenge."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def review_guidance(title, category):
     return {
         "status": "unknown",
         "label": "نظر کاربر در دیتاست ثبت نشده",
-        "message": "برای این محصول امتیاز یا review معتبر در فایل چالش نداریم؛ عامل نظر ساختگی تولید نمی‌کند.",
+        "message": "برای این محصول امتیاز یا review معتبر در فایل چالش نداریم؛ تربچه نظر ساختگی تولید نمی‌کند.",
         "checks": checks,
         "source": "دیتاست اصلاحی ترب؛ ستون review در snapshot وجود ندارد",
         "external_search_url": "https://www.google.com/search?q=" + urllib.parse.quote(f"{title} review"),
@@ -211,8 +211,8 @@ def shop_hours_status(value, now=None):
         if end <= start:
             end += 24 * 3600
         if start <= current <= end:
-            return {"key": "open", "label": "طبق ساعت ثبت‌شده باز است", "tone": "open"}
-    return {"key": "closed_now", "label": "خارج از ساعت ثبت‌شده", "tone": "closed"}
+            return {"key": "open", "label": "باز است", "tone": "open"}
+    return {"key": "closed_now", "label": "بسته است", "tone": "closed"}
 def freshness(iso_value):
     if not iso_value:
         return {"label": "زمان تغییر قیمت ثبت نشده", "days": None, "tone": "muted"}
@@ -220,14 +220,15 @@ def freshness(iso_value):
         timestamp = dt.datetime.fromisoformat(iso_value.replace("Z", "+00:00"))
         days = max(0, (NOW - timestamp.astimezone(dt.timezone.utc)).days)
     except ValueError:
-        return {"label": "زمان تغییر قیمت نامشخص", "days": None, "tone": "muted"}
+        return {"label": "به‌روز بودن نامشخص", "days": None, "tone": "muted"}
     if days <= 3:
         tone = "fresh"
     elif days <= 14:
         tone = "warm"
     else:
         tone = "stale"
-    return {"label": f"آخرین تغییر قیمت {days} روز پیش", "days": days, "tone": tone}
+    label = "به‌روز" if tone == "fresh" else ("نسبتاً به‌روز" if tone == "warm" else "قدیمی‌تر")
+    return {"label": label, "days": days, "tone": tone}
 
 
 def safe_fts_tokens(text):
@@ -448,7 +449,7 @@ class Catalog:
             item["source"] = {
                 "name": "Torb snapshot",
                 "kind": "dataset",
-                "review_status": "بدون بررسی بیرونی؛ قبل از حرکت تماس بگیر",
+                "review_status": "اطلاعات فروشنده از کاتالوگ ترب",
             }
             item["payment_options"] = parse_json(item.get("payment_options"), [])
             item["weekly_hours"] = parse_json(item.get("weekly_hours"), {})
@@ -500,8 +501,8 @@ class Catalog:
                     "area": location,
                     "lat": row["lat"],
                     "lon": row["lon"],
-                    "why": f"در snapshot ترب، {int(row['shops'] or 0):,} فروشگاه برای این عبارت در این محدوده آفر معتبر دارند.",
-                    "source": "داده‌ی اصلاحی ترب؛ شمارش فروشگاه‌های دارای آفر معتبر",
+                    "why": f"در snapshot ترب، {int(row['shops'] or 0):,} فروشگاه برای این عبارت در این محدوده گزینه معتبر دارند.",
+                    "source": "داده‌ی اصلاحی ترب؛ شمارش فروشگاه‌های دارای گزینه معتبر",
                     "source_time": "همین snapshot محلی پس از ingest",
                     "confidence": "بالا برای شمارش داده؛ موجودی لحظه‌ای نیست",
                     "disclaimer": "این کارت از داده‌ی چالش ساخته شده و فروش، قیمت یا موجودی لحظه‌ای را تضمین نمی‌کند.",
@@ -619,22 +620,22 @@ class Catalog:
             item["specs"] = parse_json(row["specs"], [])
             item["review_guidance"] = review_guidance(item["title"], item["category"])
             item["valid_offer_count"] = len(offers)
-            item["price_confidence"] = "چند آفر معتبر" if len(offers) > 1 else "یک آفر معتبر"
+            item["price_confidence"] = "چند قیمت معتبر" if len(offers) > 1 else "یک قیمت معتبر"
             item["reasons"] = []
             if offers and offers[0]["price_toman"] == item["best_price"]:
-                item["reasons"].append("کمترین قیمت ثبت‌شده در داده")
+                item["reasons"].append("کمترین قیمت")
             if parsed.get("location"):
                 item["reasons"].append(f"فروشنده در {parsed['location']}")
             if offers and offers[0]["freshness"]["tone"] == "fresh":
-                item["reasons"].append("قیمت تازه‌تر")
+                item["reasons"].append("قیمت به‌روز")
             if offers and offers[0].get("supports_fast_delivery"):
-                item["reasons"].append("ارسال فوری اعلام‌شده")
+                item["reasons"].append("ارسال فوری")
             if offers and offers[0].get("open_status", {}).get("key") == "open":
-                item["reasons"].append("طبق ساعت ثبت‌شده باز است")
+                item["reasons"].append("باز است")
             if parsed.get("requirements", {}).get("warranty") and any(offer.get("warranty") for offer in offers):
-                item["reasons"].append("گارانتی ثبت‌شده")
+                item["reasons"].append("گارانتی دارد")
             if parsed.get("requirements", {}).get("installment") and any(offer.get("payment_options") for offer in offers):
-                item["reasons"].append("گزینه‌ی پرداخت ثبت شده")
+                item["reasons"].append("پرداخت قسطی")
             items.append(item)
             if len(items) >= 24:
                 break
@@ -651,14 +652,14 @@ class Catalog:
                 "used": True,
                 "reason": "no_valid_offer",
                 "relaxed": [],
-                "message": "برای این محدودیت‌ها آفر معتبر ثبت نشده است.",
+                "message": "برای این محدودیت‌ها گزینه معتبر ثبت نشده است.",
             }
         if not items and not fallback["used"]:
             fallback = {
                 "used": True,
                 "reason": "no_catalog_match",
                 "relaxed": [],
-                "message": "در کاتالوگ برای این عبارت آفر معتبر پیدا نشد.",
+                "message": "در کاتالوگ برای این عبارت گزینه معتبر پیدا نشد.",
             }
         return {
             "query": parsed,
@@ -682,22 +683,22 @@ def agent_reply(message, filters=None, selected_ids=None):
     count = result["total"]
     plan = [
         {"id": "intent", "label": "فهم نیاز", "detail": "محصول، بودجه، محدوده و شرط مراجعه استخراج شد.", "state": "done"},
-        {"id": "retrieve", "label": "اتصال به دیتاست", "detail": "محصول، آفر و فروشگاه از snapshot رسمی چالش به هم وصل شدند.", "state": "done"},
+        {"id": "retrieve", "label": "اتصال به دیتاست", "detail": "محصول، گزینه و فروشگاه از snapshot رسمی چالش به هم وصل شدند.", "state": "done"},
         {"id": "rank", "label": "رتبه‌بندی شفاف", "detail": "قیمت معتبر، تازگی، فاصله، ساعت کاری و شرایط فروشنده امتیاز گرفتند.", "state": "done"},
         {"id": "next", "label": "قدم بعدی", "detail": "مقایسه یا انتخاب فروشنده برای مراجعه آماده است.", "state": "done"},
     ]
     if count:
         first = result["results"][0]
-        answer = f"برای «{message.strip()}» {count} گزینه با قیمت معتبر پیدا کردم. کمترین قیمت ثبت‌شده از {first['best_price']:,} تومان شروع می‌شود."
+        answer = f"برای «{message.strip()}» {count} گزینه پیدا کردم. کمترین قیمت از {first['best_price']:,} تومان شروع می‌شود."
         if parsed.get("location"):
             answer += f" نتیجه‌ها را روی محدوده‌ی {parsed['location']} محدود کردم."
         if parsed.get("budget_max"):
             answer += f" سقف بودجه‌ی {int(parsed['budget_max']):,} تومان هم اعمال شد."
-        answer += " قیمت snapshot است و موجودی لحظه‌ای را تضمین نمی‌کند؛ قبل از حرکت، ساعت کاری و تماس با فروشنده را بررسی کن."
+        answer += " قیمت و شرایط ممکن است تغییر کند؛ قبل از حرکت ساعت کاری و تماس با فروشنده را بررسی کن."
         if result.get("fallback", {}).get("used"):
             answer += " برای اینکه صفحه خالی نماند، یک محدودیت جست‌وجو بازتر شد؛ این موضوع در شواهد نتیجه ثبت شده است."
     else:
-        answer = "برای این ترکیب در آفرهای معتبر ترب نتیجه‌ی قابل اتکا پیدا نکردم."
+        answer = "برای این ترکیب در گزینههای معتبر ترب نتیجه‌ی قابل اتکا پیدا نکردم."
         if result.get("market_suggestions"):
             answer += " یک راهنمای ناحیه‌ای جدا از نتایج دیتاست آماده کردم تا اگر خواستی جست‌وجوی حضوری را ادامه بدهی."
         answer += " بودجه، محدوده یا عبارت محصول را هم می‌توانی کمی بازتر کنی."
@@ -722,7 +723,7 @@ def agent_reply(message, filters=None, selected_ids=None):
             "selected_ids": selected_ids,
             "freshness_policy": "آخرین زمان تغییر قیمت نمایش داده می‌شود؛ موجودی تأیید نشده تلقی می‌شود.",
             "price_policy": "قیمت‌های خالی، کمتر از ۱٬۰۰۰ یا بیشتر از ۱٬۰۰۰٬۰۰۰٬۰۰۰٬۰۰۰ تومان وارد رتبه‌بندی نمی‌شوند.",
-            "dataset_first": "محصول و آفر فقط از دیتاست اصلاحی ترب انتخاب می‌شود؛ راهنمای ناحیه‌ای بیرونی جدا و برچسب‌دار است.",
+            "dataset_first": "محصول و گزینه فقط از دیتاست اصلاحی ترب انتخاب می‌شود؛ راهنمای ناحیه‌ای بیرونی جدا و برچسب‌دار است.",
             "review_policy": "امتیاز یا review بدون منبع ساخته نمی‌شود؛ در نبود داده، چک‌لیست راستی‌آزمایی نشان داده می‌شود.",
         },
         "market_suggestions": result.get("market_suggestions", []),
@@ -793,7 +794,7 @@ class Handler(BaseHTTPRequestHandler):
             requested = (STATIC / relative).resolve()
             if STATIC not in requested.parents:
                 return self._json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
-            content_types = {".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
+            content_types = {".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml"}
             return self._file(requested, content_types.get(requested.suffix, "application/octet-stream"))
         return self._json({"error": "مسیر پیدا نشد"}, HTTPStatus.NOT_FOUND)
 
@@ -818,11 +819,9 @@ class Handler(BaseHTTPRequestHandler):
                 agent_reply(message, payload.get("filters"), payload.get("selected_ids"))
             )
         if path == "/api/contact":
-            # A deterministic, local hand-off for the demo. It never contacts
-            # a shop or claims that stock was confirmed; the user can copy the
-            # prepared message/number and use their own phone if needed.
+            # A deterministic, local call hand-off for the demo. It never
+            # contacts a shop or claims that stock was confirmed.
             shop_id = str(payload.get("shop_id", "")).strip()
-            channel = str(payload.get("channel", "mock_call")).strip()
             row = catalog.conn.execute(
                 "SELECT shop_id,name,contacts FROM shops WHERE shop_id=?", (shop_id,)
             ).fetchone()
@@ -833,12 +832,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({
                 "ok": True,
                 "mode": "mock",
-                "channel": channel if channel in ("mock_call", "mock_message") else "mock_call",
                 "status": "ready_to_call" if phone else "no_phone",
                 "shop_id": shop_id,
                 "shop_name": row["name"],
                 "contact": phone,
-                "message": "این ارتباط در نسخه‌ی نمایشی شبیه‌سازی شده است؛ کاربر می‌تواند پیام یا شماره‌ی نمونه را از گوشی خودش استفاده کند، اما تماس واقعی و موجودی تأیید نمی‌شود.",
+                "message": "تماس تربچه با فروشنده در نسخه‌ی نمایشی انجام می‌شود؛ موجودی نهایی را هنگام مراجعه بررسی کن.",
             })
         if path == "/api/telemetry":
             # Keep demo telemetry local and anonymous. It is useful in the demo
@@ -862,7 +860,7 @@ def main():
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8080")))
     args = parser.parse_args()
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"Torb Scout running on http://{args.host}:{args.port}")
+    print(f"Torbche running on http://{args.host}:{args.port}")
     print(f"Database: {DB_PATH} ({'sample' if catalog.sample_mode else 'full catalog'})")
     try:
         httpd.serve_forever()
