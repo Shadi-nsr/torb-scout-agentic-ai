@@ -55,15 +55,20 @@
   function renderResults(payload, query) {
     state.results = payload.results || [];
     state.query = query || "";
+    if (payload.meta) state.meta = payload.meta;
     $("resultsTitle").textContent = resultTitle(state.query, state.results.length);
     $("resultCount").textContent = state.results.length ? fa(state.results.length) + " گزینه" : "";
     const grid = $("productGrid");
     grid.classList.toggle("list-view", state.view === "list");
     if (!state.results.length) {
       grid.innerHTML = '<div class="empty-state"><div class="empty-orbit"><span>⌕</span></div><h3>نتیجه‌ی کافی نداریم</h3><p>عبارت محصول یا محدوده را کمی بازتر کن تا گزینه‌های بیشتری بررسی کنم.</p></div>';
+      $("evidenceBanner").hidden = true;
       renderMap([]);
       return;
     }
+    $("evidenceBanner").hidden = false;
+    const valid = payload.meta && payload.meta.valid_offers ? fa(payload.meta.valid_offers) : "داده‌ی معتبر";
+    $("evidenceText").textContent = "نتیجه‌ها از " + valid + " آفر معتبر رتبه‌بندی شده‌اند؛ قیمت snapshot است و موجودی لحظه‌ای نیست.";
     grid.innerHTML = state.results.map(cardHtml).join("");
     grid.querySelectorAll("[data-compare]").forEach(function (button) {
       button.addEventListener("click", function () { toggleCompare(button.dataset.compare); });
@@ -78,7 +83,7 @@
   function cardHtml(item) {
     const first = (item.offers || [])[0] || {};
     const fresh = first.freshness || { label: "تازگی نامشخص", tone: "muted" };
-    const image = item.image_url ? '<img class="product-visual" src="' + escapeHtml(item.image_url) + '" alt="" loading="lazy" onerror="this.remove()">'
+    const image = item.image_url ? '<img class="product-visual" src="' + escapeHtml(item.image_url) + '" alt="تصویر ' + escapeHtml(item.title) + '" loading="lazy" onerror="this.remove()">'
       : '<div class="product-placeholder">✦</div>';
     const reasons = (item.reasons || []).slice(0, 3).map(function (reason) {
       return '<span class="reason-chip">' + escapeHtml(reason) + "</span>";
@@ -90,7 +95,7 @@
       '<span class="card-fresh ' + escapeHtml(fresh.tone) + '">' + escapeHtml(fresh.label) + "</span></div>" +
       '<div class="card-body"><div class="card-category">' + escapeHtml(item.category || "دسته‌بندی نامشخص") + "</div>" +
       '<h3 class="card-title">' + escapeHtml(item.title) + "</h3>" +
-      '<div class="price-row"><div><span class="price-value">' + money(item.best_price) + '</span><span class="price-unit">تومان</span></div><span class="offer-count">' + fa(item.shop_count) + " فروشنده</span></div>" +
+      '<div class="price-row"><div><span class="price-value">' + money(item.best_price) + '</span><span class="price-unit">تومان</span><small class="confidence-label">' + escapeHtml(item.price_confidence || "قیمت معتبر") + '</small></div><span class="offer-count">' + fa(item.shop_count) + " فروشنده</span></div>" +
       '<div class="reason-list">' + reasons + "</div>" +
       '<button class="card-action" data-detail="' + escapeHtml(item.product_id) + '">دیدن فروشنده‌ها و جزئیات <span>←</span></button></div></article>';
   }
@@ -223,6 +228,15 @@
     appendMessage("agent", answer, [
       { label: "خواندن آفرها" }, { label: "مقایسه‌ی قیمت" }, { label: "بررسی فاصله" }, { label: "تماس قبل از حرکت" }
     ]);
+    $("productModalTitle").textContent = item.title;
+    $("productModalLead").textContent = "" + (item.price_confidence || "قیمت معتبر") + "؛ قبل از حرکت ساعت کاری و تماس فروشنده را بررسی کن.";
+    $("offerList").innerHTML = offers.map(function (offer) {
+      const phone = ((offer.contacts || []).find(function (contact) { return contact.channel === "phone" && contact.display_number; }) || {}).display_number || "";
+      const phoneHref = phone ? "tel:" + latinDigits(phone).replace(/[^\d+]/g, "") : "";
+      const contactAction = phoneHref ? '<a class="offer-contact" href="' + escapeHtml(phoneHref) + '">تماس با فروشنده</a>' : '<span class="offer-contact muted">شماره ثبت نشده</span>';
+      return '<article class="offer-row"><div class="offer-main"><strong>' + escapeHtml(offer.shop_name) + '</strong><span>' + escapeHtml(offer.address || offer.location_label || "آدرس ثبت نشده") + '</span><small>' + escapeHtml((offer.open_status || {}).label || "ساعت کاری نامشخص") + ' · ' + escapeHtml((offer.freshness || {}).label || "تازگی نامشخص") + '</small></div><div class="offer-side"><b>' + money(offer.price_toman) + ' <small>تومان</small></b><span>' + escapeHtml(offer.warranty || "گارانتی ثبت نشده") + '</span>' + contactAction + '</div></article>';
+    }).join("");
+    $("productModal").hidden = false;
     sendTelemetry("open_product", { product_id: id });
   }
 
@@ -265,6 +279,8 @@
       state.meta = meta;
       $("catalogStat").textContent = fa(meta.products) + " محصول · " + fa(meta.shops) + " فروشگاه";
       $("dataTrustText").textContent = fa(meta.offers) + " آفر قابل جست‌وجو";
+      $("qualityStrip").hidden = false;
+      $("qualityText").textContent = fa(meta.valid_offers || meta.offers) + " معتبر · " + fa(meta.flagged_offers || 0) + " کنارگذاشته‌شده به‌دلیل ابهام قیمت";
       (meta.locations || []).forEach(function (location) {
         const option = document.createElement("option");
         option.value = location.name;
@@ -298,6 +314,8 @@
   $("openAbout").addEventListener("click", function () { $("aboutModal").hidden = false; });
   $("closeAbout").addEventListener("click", function () { $("aboutModal").hidden = true; });
   $("aboutModal").addEventListener("click", function (event) { if (event.target === $("aboutModal")) $("aboutModal").hidden = true; });
+  $("closeProduct").addEventListener("click", function () { $("productModal").hidden = true; });
+  $("productModal").addEventListener("click", function (event) { if (event.target === $("productModal")) $("productModal").hidden = true; });
   $("clearChat").addEventListener("click", function () {
     $("conversation").innerHTML = '<div class="message agent-message"><div class="message-badge">TS</div><div><p>گفت‌وگو پاک شد. محصول یا محدوده‌ی بعدی را بگو.</p></div></div>';
     $("assistantSuggestions").hidden = false;
