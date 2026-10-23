@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import sqlite3
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,26 @@ def null_to_none(value: Optional[str]):
     if value is None or value == "" or value == "null":
         return None
     return value
+
+
+def parse_price(value: Optional[str]):
+    """Return a safe integer price and a transparent quality flag.
+
+    The challenge export contains missing values and a small number of obvious
+    placeholders/outliers. Keeping the flag in SQLite lets the product explain
+    why a value was or was not used instead of silently ranking bad prices.
+    """
+    if value in (None, "", "null"):
+        return None, "missing"
+    try:
+        price = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None, "invalid"
+    if price < 1000:
+        return int(price), "placeholder"
+    if price > 1_000_000_000_000:
+        return int(price), "outlier"
+    return int(price), "valid"
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -66,11 +87,14 @@ def create_schema(conn: sqlite3.Connection) -> None:
           seller_title TEXT,
           description TEXT,
           warranty TEXT,
-          last_price_changed_at TEXT
+          last_price_changed_at TEXT,
+          price_valid INTEGER NOT NULL DEFAULT 0,
+          price_quality TEXT NOT NULL DEFAULT 'missing'
         );
         CREATE INDEX idx_offers_product ON offers(product_id);
         CREATE INDEX idx_offers_shop ON offers(shop_id);
         CREATE INDEX idx_offers_price ON offers(price_toman);
+        CREATE INDEX idx_offers_valid ON offers(price_valid);
         CREATE INDEX idx_shops_location ON shops(location_label);
         CREATE INDEX idx_products_category ON products(category);
 
@@ -168,7 +192,7 @@ def build(data_dir: Path, db_path: Path) -> None:
                 float(r["lon"]) if r.get("lon") not in (None, "", "null") else None,
                 null_to_none(r.get("location_label")),
                 null_to_none(r.get("payment_options")),
-                1 if r.get("supports_fast_delivery") == "true" else 0,
+                1 if r.get("supports_fast_delivery") == "true" else (0 if r.get("supports_fast_delivery") == "false" else None),
                 null_to_none(r.get("website_url")),
                 null_to_none(r.get("weekly_hours")),
             ),
@@ -177,7 +201,7 @@ def build(data_dir: Path, db_path: Path) -> None:
             conn,
             data_dir / "offers.csv",
             "offers",
-            [
+                [
                 "offer_id",
                 "product_id",
                 "shop_id",
@@ -186,16 +210,20 @@ def build(data_dir: Path, db_path: Path) -> None:
                 "description",
                 "warranty",
                 "last_price_changed_at",
+                "price_valid",
+                "price_quality",
             ],
             lambda r: (
                 r["offer_id"],
                 r["product_id"],
                 r["shop_id"],
-                float(r["price_toman"]) if r.get("price_toman") not in (None, "", "null") else None,
+                parse_price(r.get("price_toman"))[0],
                 null_to_none(r.get("seller_title")),
                 null_to_none(r.get("description")),
                 null_to_none(r.get("warranty")),
                 null_to_none(r.get("last_price_changed_at")),
+                1 if parse_price(r.get("price_toman"))[1] == "valid" else 0,
+                parse_price(r.get("price_toman"))[1],
             ),
         )
         counts = {
@@ -205,6 +233,10 @@ def build(data_dir: Path, db_path: Path) -> None:
         }
         for key, value in counts.items():
             conn.execute("INSERT INTO meta(key,value) VALUES (?,?)", (key, str(value)))
+        valid_offers = conn.execute("SELECT count(*) FROM offers WHERE price_valid=1").fetchone()[0]
+        flagged_offers = counts["offers"] - valid_offers
+        conn.execute("INSERT INTO meta(key,value) VALUES (?,?)", ("valid_offers", str(valid_offers)))
+        conn.execute("INSERT INTO meta(key,value) VALUES (?,?)", ("flagged_offers", str(flagged_offers)))
         conn.execute(
             "INSERT INTO meta(key,value) VALUES (?,?)",
             ("dataset_note", "Starcoach v16 cap300 CSV export"),
