@@ -350,9 +350,9 @@ class Catalog:
         for name in ("products", "shops", "offers"):
             counts[name] = self.conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
         locations = [
-            {"name": row[0], "count": row[1]}
+            {"name": row[0], "count": row[1], "lat": row[2], "lon": row[3]}
             for row in self.conn.execute(
-                "SELECT location_label,count(*) FROM shops WHERE location_label IS NOT NULL "
+                "SELECT location_label,count(*),avg(lat),avg(lon) FROM shops WHERE location_label IS NOT NULL "
                 "GROUP BY location_label ORDER BY count(*) DESC LIMIT 24"
             )
         ]
@@ -438,7 +438,7 @@ class Catalog:
             params,
         ).fetchall()
         result = []
-        for row in rows:
+        for semantic_position, row in enumerate(rows):
             item = dict(row)
             item["price_toman"] = int(item["price_toman"])
             item["freshness"] = freshness(item.get("last_price_changed_at"))
@@ -617,6 +617,9 @@ class Catalog:
             item["best_price"] = int(row["best_price"])
             item["image_url"] = product_image(row["image_urls"])
             item["offers"] = offers
+            distances = [offer["distance_km"] for offer in offers if offer.get("distance_km") is not None]
+            item["nearest_distance_km"] = round(min(distances), 1) if distances else None
+            item["_semantic_position"] = semantic_position
             item["specs"] = parse_json(row["specs"], [])
             item["review_guidance"] = review_guidance(item["title"], item["category"])
             item["valid_offer_count"] = len(offers)
@@ -637,13 +640,45 @@ class Catalog:
             if parsed.get("requirements", {}).get("installment") and any(offer.get("payment_options") for offer in offers):
                 item["reasons"].append("پرداخت قسطی")
             items.append(item)
-            if len(items) >= 24:
+            if len(items) >= 36:
                 break
         requirements = parsed.get("requirements", {})
         if requirements.get("fast_delivery"):
             items.sort(key=lambda item: any(offer.get("supports_fast_delivery") == 1 for offer in item.get("offers", [])), reverse=True)
         if requirements.get("installment"):
             items.sort(key=lambda item: any(offer.get("payment_options") for offer in item.get("offers", [])), reverse=True)
+        if center and relevance_mode and items:
+            prices = [float(item.get("best_price") or 0) for item in items]
+            min_price, max_price = min(prices), max(prices)
+            price_span = max(max_price - min_price, 1.0)
+
+            def proximity_rank(item):
+                distance = float(item.get("nearest_distance_km") or 99.0)
+                proximity_score = 1.0 / (1.0 + distance)
+                price_score = 1.0 - ((float(item.get("best_price") or max_price) - min_price) / price_span)
+                semantic_score = 1.0 / (1.0 + float(item.get("_semantic_position") or 0))
+                return proximity_score * 0.55 + price_score * 0.30 + semantic_score * 0.15
+
+            items.sort(key=proximity_rank, reverse=True)
+        items = items[:24]
+        for index, item in enumerate(items):
+            if center and item.get("nearest_distance_km") is not None and index == 0:
+                item["reasons"].insert(0, "نزدیک‌تر به شما")
+            item.pop("_semantic_position", None)
+        ranking_note = None
+        if center and items:
+            cheapest = min(items, key=lambda item: float(item.get("best_price") or 0))
+            nearest = items[0]
+            nearest_distance = nearest.get("nearest_distance_km")
+            cheapest_distance = cheapest.get("nearest_distance_km")
+            if cheapest["product_id"] != nearest["product_id"] and cheapest_distance is not None and nearest_distance is not None:
+                ranking_note = (
+                    f"گزینه‌ی اول حدود {nearest_distance:g} کیلومتر با شما فاصله دارد؛ "
+                    f"گزینه‌ی ارزان‌تر در حدود {cheapest_distance:g} کیلومتری پیدا شد، "
+                    "پس تربچه فاصله را کنار قیمت سنجیده است."
+                )
+            elif nearest_distance is not None:
+                ranking_note = f"اولویت نتیجه‌ها با فروشنده‌های نزدیک‌تر به شماست و قیمت هم هم‌زمان مقایسه شده است؛ نزدیک‌ترین گزینه حدود {nearest_distance:g} کیلومتر فاصله دارد."
         # The fallback can still produce no offers when every candidate has
         # been filtered out by price quality. Keep the reason explicit for
         # callers and for review of the decision trace.
@@ -668,6 +703,7 @@ class Catalog:
             "total": len(items),
             "meta": self.meta(),
             "fallback": fallback,
+            "ranking_note": ranking_note,
             "market_suggestions": self.market_guidance(requested) if not items else [],
         }
 
@@ -694,6 +730,8 @@ def agent_reply(message, filters=None, selected_ids=None):
             answer += f" نتیجه‌ها را روی محدوده‌ی {parsed['location']} محدود کردم."
         if parsed.get("budget_max"):
             answer += f" سقف بودجه‌ی {int(parsed['budget_max']):,} تومان هم اعمال شد."
+        if result.get("ranking_note"):
+            answer += " " + result["ranking_note"]
         answer += " قیمت و شرایط ممکن است تغییر کند؛ قبل از حرکت ساعت کاری و تماس با فروشنده را بررسی کن."
         if result.get("fallback", {}).get("used"):
             answer += " برای اینکه صفحه خالی نماند، یک محدودیت جست‌وجو بازتر شد؛ این موضوع در شواهد نتیجه ثبت شده است."
@@ -708,6 +746,7 @@ def agent_reply(message, filters=None, selected_ids=None):
         "results": result["results"],
         "query": result["query"],
         "total": count,
+        "ranking_note": result.get("ranking_note"),
         "suggestions": [
             "گوشی موبایل تا ۲۰ میلیون نزدیک فردوسی",
             "هدفون بی‌سیم با مقایسه‌ی قیمت و گارانتی",
