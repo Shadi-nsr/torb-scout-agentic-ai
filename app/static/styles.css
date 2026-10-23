@@ -215,6 +215,9 @@ input[type=range] { width: 100%; accent-color: var(--teal); margin: 4px 0 0; }
 .mock-contact-status p { margin: 0 0 7px; font-size: 10px; line-height: 1.9; }
 .mock-contact-status small { color: #78908d; font-size: 8px; }
 .mock-contact-icon { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 9px; border-radius: 10px; color: white; background: var(--teal); font-weight: 800; }
+.mock-contact-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.mock-contact-actions .secondary-button { font-size: 9px; }
+.contact-note { margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.9; }
 .contact-actions { display: flex; justify-content: flex-start; margin-top: 15px; }
 
 [hidden] { display: none !important; }
