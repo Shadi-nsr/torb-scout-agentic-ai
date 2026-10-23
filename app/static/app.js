@@ -52,6 +52,22 @@
     return "گزینه‌های پیشنهادی برای «" + query + "»";
   }
 
+  function marketCardHtml(item) {
+    const mapUrl = item.map_url || ("https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(item.area || "تهران"));
+    return '<article class="market-card"><div class="market-card-icon">⌖</div><div class="market-card-body"><div class="market-card-kicker">راهنمای ادامه‌ی خرید حضوری</div><h3>' +
+      escapeHtml(item.title || item.area) + '</h3><p>' + escapeHtml(item.why || "برای ادامه‌ی جست‌وجوی حضوری پیشنهاد شده است.") +
+      '</p><div class="market-card-meta"><span>' + escapeHtml(item.source || "راهنمای جدا از نتایج محصول") + '</span><span>' +
+      escapeHtml(item.source_time || "زمان بررسی ثبت نشده") + '</span><span>' + escapeHtml(item.confidence || "نیازمند راستی‌آزمایی") + '</span><span>' +
+      escapeHtml(item.disclaimer || "فروش و موجودی در این کارت تضمین نمی‌شود.") + '</span></div><a class="market-map-link" href="' +
+      escapeHtml(mapUrl) + '" target="_blank" rel="noopener">نمایش ناحیه روی نقشه <span>↗</span></a></div></article>';
+  }
+
+  function renderMarketSuggestions(suggestions) {
+    if (!suggestions || !suggestions.length) return "";
+    return '<div class="market-guidance"><div class="market-guidance-head"><div><div class="section-kicker">اگر کالا پیدا نشد</div><h3>مسیر جایگزین برای خرید حضوری</h3></div><span>راهنمای جدا از نتیجه‌ی محصول</span></div>' +
+      suggestions.map(marketCardHtml).join("") + '</div>';
+  }
+
   function renderResults(payload, query) {
     state.results = payload.results || [];
     state.query = query || "";
@@ -61,7 +77,7 @@
     const grid = $("productGrid");
     grid.classList.toggle("list-view", state.view === "list");
     if (!state.results.length) {
-      grid.innerHTML = '<div class="empty-state"><div class="empty-orbit"><span>⌕</span></div><h3>نتیجه‌ی کافی نداریم</h3><p>عبارت محصول یا محدوده را کمی بازتر کن تا گزینه‌های بیشتری بررسی کنم.</p></div>';
+      grid.innerHTML = '<div class="empty-state"><div class="empty-orbit"><span>⌕</span></div><h3>در آفرهای معتبر نتیجه‌ای نداریم</h3><p>محصول و قیمت فقط از دیتاست ترب انتخاب می‌شوند؛ اگر بخواهی، مسیر عمومی بورس این دسته را هم نشان می‌دهم.</p></div>' + renderMarketSuggestions(payload.market_suggestions || []);
       $("evidenceBanner").hidden = true;
       renderMap([]);
       return;
@@ -190,7 +206,11 @@
       const payload = await response.json();
       state.lastAssistant = payload;
       appendMessage("agent", payload.reply || "نتیجه آماده است.", payload.plan);
-      renderResults({ results: payload.results || [] }, message);
+      renderResults({
+        results: payload.results || [],
+        market_suggestions: payload.market_suggestions || [],
+        meta: payload.evidence && payload.evidence.catalog_rows
+      }, message);
       updateTrace(payload.plan);
       if (payload.suggestions) {
         $("assistantSuggestions").innerHTML = payload.suggestions.slice(0, 2).map(function (item) {
@@ -219,6 +239,23 @@
     $("compareCount").textContent = fa(state.selected.size);
   }
 
+  async function showMockContact(shopId, shopName, phone) {
+    $("contactModalTitle").textContent = "تماس شبیه‌سازی‌شده با " + shopName;
+    $("contactModalLead").textContent = "شماره‌ی «" + (phone || "ثبت‌نشده") + "» فقط برای داده‌ی نمونه است و هیچ تماس واقعی برقرار نمی‌شود.";
+    $("contactStatus").innerHTML = '<div class="mock-contact-icon">✓</div><strong>درخواست تماس فرضی آماده شد</strong><p>پیام آماده: «سلام، برای بررسی موجودی و قیمت همین کالا قبل از مراجعه تماس می‌گیریم.»</p><small>نتیجه: نیازمند تأیید دستی فروشنده · موجودی تأیید نشده</small>';
+    $("contactModal").hidden = false;
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId, channel: "mock_call" })
+      });
+      const payload = await response.json();
+      if (payload.message) $("contactModalLead").textContent = payload.message;
+    } catch (error) {}
+    sendTelemetry("mock_contact", { shop_id: shopId, shop_name: shopName });
+  }
+
   function showProduct(id) {
     const item = byId(id);
     if (!item) return;
@@ -230,12 +267,28 @@
     ]);
     $("productModalTitle").textContent = item.title;
     $("productModalLead").textContent = "" + (item.price_confidence || "قیمت معتبر") + "؛ قبل از حرکت ساعت کاری و تماس فروشنده را بررسی کن.";
+    const review = item.review_guidance || { label: "نظر کاربر در دیتاست ثبت نشده", message: "امتیاز بدون منبع ساخته نمی‌شود.", checks: [], source: "دیتاست چالش" };
+    const checks = (review.checks || []).map(function (check) { return "<li>" + escapeHtml(check) + "</li>"; }).join("");
+    const specs = (item.specs || []).filter(function (spec) { return spec && spec.key && spec.value; }).slice(0, 6);
+    const specRows = specs.length ? specs.map(function (spec) {
+      return "<div><span>" + escapeHtml(spec.key) + "</span><b>" + escapeHtml(spec.value) + "</b></div>";
+    }).join("") : '<div class="unknown-field">مشخصات فنی برای این محصول ثبت نشده است.</div>';
+    $("productContext").innerHTML = '<div class="product-insights"><section class="review-panel"><div class="insight-kicker">بازخورد و راستی‌آزمایی</div><strong>' +
+      escapeHtml(review.label) + '</strong><p>' + escapeHtml(review.message || "") + '</p><ul>' + checks + '</ul><small>' +
+      escapeHtml(review.source || "") + '</small><a href="' + escapeHtml(review.external_search_url || "#") + '" target="_blank" rel="noopener">جست‌وجوی نقدهای بیرونی ↗</a></section>' +
+      '<section class="spec-panel"><div class="insight-kicker">مشخصات ثبت‌شده</div>' + specRows + '</section></div>';
     $("offerList").innerHTML = offers.map(function (offer) {
-      const phone = ((offer.contacts || []).find(function (contact) { return contact.channel === "phone" && contact.display_number; }) || {}).display_number || "";
-      const phoneHref = phone ? "tel:" + latinDigits(phone).replace(/[^\d+]/g, "") : "";
-      const contactAction = phoneHref ? '<a class="offer-contact" href="' + escapeHtml(phoneHref) + '">تماس با فروشنده</a>' : '<span class="offer-contact muted">شماره ثبت نشده</span>';
-      return '<article class="offer-row"><div class="offer-main"><strong>' + escapeHtml(offer.shop_name) + '</strong><span>' + escapeHtml(offer.address || offer.location_label || "آدرس ثبت نشده") + '</span><small>' + escapeHtml((offer.open_status || {}).label || "ساعت کاری نامشخص") + ' · ' + escapeHtml((offer.freshness || {}).label || "تازگی نامشخص") + '</small></div><div class="offer-side"><b>' + money(offer.price_toman) + ' <small>تومان</small></b><span>' + escapeHtml(offer.warranty || "گارانتی ثبت نشده") + '</span>' + contactAction + '</div></article>';
+      const phoneContact = (offer.contacts || []).find(function (contact) { return contact.channel === "phone" && contact.display_number; }) || {};
+      const phone = phoneContact.display_number || "";
+      const contactAction = '<button type="button" class="offer-contact" data-contact-shop="' + escapeHtml(offer.shop_id) + '" data-contact-name="' + escapeHtml(offer.shop_name) + '" data-contact-phone="' + escapeHtml(phone) + '">تماس شبیه‌سازی‌شده</button>';
+      const sourceLabel = (offer.source || {}).review_status || "منبع بیرونی بررسی نشده";
+      return '<article class="offer-row"><div class="offer-main"><strong>' + escapeHtml(offer.shop_name) + '</strong><span>' + escapeHtml(offer.address || offer.location_label || "آدرس ثبت نشده") + '</span><small>' + escapeHtml((offer.open_status || {}).label || "ساعت کاری نامشخص") + ' · ' + escapeHtml((offer.freshness || {}).label || "تازگی نامشخص") + ' · ' + escapeHtml(sourceLabel) + '</small></div><div class="offer-side"><b>' + money(offer.price_toman) + ' <small>تومان</small></b><span>' + escapeHtml(offer.warranty || "گارانتی ثبت نشده") + '</span>' + contactAction + '</div></article>';
     }).join("");
+    $("offerList").querySelectorAll("[data-contact-shop]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        showMockContact(button.dataset.contactShop, button.dataset.contactName, button.dataset.contactPhone);
+      });
+    });
     $("productModal").hidden = false;
     sendTelemetry("open_product", { product_id: id });
   }
@@ -316,6 +369,9 @@
   $("aboutModal").addEventListener("click", function (event) { if (event.target === $("aboutModal")) $("aboutModal").hidden = true; });
   $("closeProduct").addEventListener("click", function () { $("productModal").hidden = true; });
   $("productModal").addEventListener("click", function (event) { if (event.target === $("productModal")) $("productModal").hidden = true; });
+  $("closeContact").addEventListener("click", function () { $("contactModal").hidden = true; });
+  $("closeContactAction").addEventListener("click", function () { $("contactModal").hidden = true; });
+  $("contactModal").addEventListener("click", function (event) { if (event.target === $("contactModal")) $("contactModal").hidden = true; });
   $("clearChat").addEventListener("click", function () {
     $("conversation").innerHTML = '<div class="message agent-message"><div class="message-badge">TS</div><div><p>گفت‌وگو پاک شد. محصول یا محدوده‌ی بعدی را بگو.</p></div></div>';
     $("assistantSuggestions").hidden = false;
