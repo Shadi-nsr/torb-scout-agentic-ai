@@ -41,11 +41,12 @@
     const image = item.image_url ? '<img class="product-visual" src="' + escapeHtml(item.image_url) + '" alt="تصویر ' + escapeHtml(item.title) + '" loading="lazy" onerror="this.remove()">' : '<div class="product-placeholder">✦</div>';
     const reasons = (item.reasons || []).slice(0, 3).map((reason) => '<span class="reason-chip">' + escapeHtml(reason.replace(/ثبت‌شده در داده|طبق ساعت ثبت‌شده|اعلام‌شده/g, "").replace(/\s{2,}/g, " ").trim()) + "</span>").join("");
     const selected = state.selected.has(item.product_id);
+    const preferred = state.results.length && state.results[0].product_id === item.product_id ? '<span class="reason-chip preferred-chip">ترجیح تربچه</span>' : "";
     return '<article class="product-card ' + (selected ? "selected" : "") + '" data-card="' + escapeHtml(item.product_id) + '">' +
       '<div class="card-top">' + image + '<button class="compare-check ' + (selected ? "checked" : "") + '" data-compare="' + escapeHtml(item.product_id) + '" aria-label="افزودن به مقایسه">' + (selected ? "✓" : "") + '</button><span class="card-fresh ' + escapeHtml(fresh.tone) + '">' + escapeHtml(fresh.label) + '</span></div>' +
       '<div class="card-body"><div class="card-category">' + escapeHtml(item.category || "محصول") + '</div><h3 class="card-title">' + escapeHtml(item.title) + '</h3>' +
       '<div class="price-row"><div><span class="price-value">' + money(item.best_price) + '</span><span class="price-unit">تومان</span><small class="confidence-label">' + escapeHtml(item.price_confidence || "قیمت قابل مقایسه") + '</small></div><span class="offer-count">' + fa(item.shop_count) + ' فروشنده</span></div>' +
-      '<div class="reason-list">' + reasons + '</div><button class="card-action" data-detail="' + escapeHtml(item.product_id) + '" type="button">دیدن فروشنده‌ها و جزئیات <span>←</span></button></div></article>';
+      '<div class="reason-list">' + preferred + reasons + '</div><button class="card-action" data-detail="' + escapeHtml(item.product_id) + '" type="button">دیدن فروشنده‌ها و جزئیات <span>←</span></button></div></article>';
   }
 
   function renderResults(payload, query) {
