@@ -7,7 +7,8 @@
     query: "",
     view: "grid",
     meta: null,
-    lastAssistant: null
+    lastAssistant: null,
+    contactDraft: { message: "", phone: "" }
   };
 
   const $ = (id) => document.getElementById(id);
@@ -240,9 +241,13 @@
   }
 
   async function showMockContact(shopId, shopName, phone) {
+    state.contactDraft = {
+      phone: phone || "",
+      message: "سلام، برای بررسی موجودی و قیمت همین کالا قبل از مراجعه تماس می‌گیریم."
+    };
     $("contactModalTitle").textContent = "تماس شبیه‌سازی‌شده با " + shopName;
     $("contactModalLead").textContent = "شماره‌ی «" + (phone || "ثبت‌نشده") + "» فقط برای داده‌ی نمونه است و هیچ تماس واقعی برقرار نمی‌شود.";
-    $("contactStatus").innerHTML = '<div class="mock-contact-icon">✓</div><strong>درخواست تماس فرضی آماده شد</strong><p>پیام آماده: «سلام، برای بررسی موجودی و قیمت همین کالا قبل از مراجعه تماس می‌گیریم.»</p><small>نتیجه: نیازمند تأیید دستی فروشنده · موجودی تأیید نشده</small>';
+    $("contactStatus").innerHTML = '<div class="mock-contact-icon">✓</div><strong>مسیر ارتباط برای کاربر آماده شد</strong><p>پیام آماده: «' + escapeHtml(state.contactDraft.message) + '»</p><small>نتیجه‌ی mock: نیازمند تأیید دستی فروشنده · موجودی تأیید نشده</small>';
     $("contactModal").hidden = false;
     try {
       const response = await fetch("/api/contact", {
@@ -254,6 +259,24 @@
       if (payload.message) $("contactModalLead").textContent = payload.message;
     } catch (error) {}
     sendTelemetry("mock_contact", { shop_id: shopId, shop_name: shopName });
+  }
+
+  async function copyContactDraft(kind, button) {
+    const value = kind === "message" ? state.contactDraft.message : state.contactDraft.phone;
+    if (!value) {
+      button.textContent = "اطلاعات ثبت نشده";
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      const helper = document.createElement("textarea");
+      helper.value = value; helper.setAttribute("readonly", ""); helper.style.position = "fixed"; helper.style.opacity = "0";
+      document.body.appendChild(helper); helper.select(); document.execCommand("copy"); helper.remove();
+    }
+    const original = button.textContent;
+    button.textContent = "کپی شد ✓";
+    setTimeout(function () { button.textContent = original; }, 1400);
   }
 
   function showProduct(id) {
@@ -372,6 +395,8 @@
   $("closeContact").addEventListener("click", function () { $("contactModal").hidden = true; });
   $("closeContactAction").addEventListener("click", function () { $("contactModal").hidden = true; });
   $("contactModal").addEventListener("click", function (event) { if (event.target === $("contactModal")) $("contactModal").hidden = true; });
+  $("copyContactMessage").addEventListener("click", function () { copyContactDraft("message", this); });
+  $("copyContactNumber").addEventListener("click", function () { copyContactDraft("phone", this); });
   $("clearChat").addEventListener("click", function () {
     $("conversation").innerHTML = '<div class="message agent-message"><div class="message-badge">TS</div><div><p>گفت‌وگو پاک شد. محصول یا محدوده‌ی بعدی را بگو.</p></div></div>';
     $("assistantSuggestions").hidden = false;
