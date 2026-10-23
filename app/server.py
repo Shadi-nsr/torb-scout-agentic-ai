@@ -16,13 +16,20 @@ import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 DB_PATH = Path(os.environ.get("TORB_DB", ROOT.parent / "data" / "catalog.db"))
 DATA_DIR = Path(os.environ.get("TORB_DATA_DIR", ROOT.parent.parent.parent / "work" / "dataset"))
-NOW = dt.datetime(2026, 10, 21, tzinfo=dt.timezone.utc)
+try:
+    NOW = dt.datetime.fromisoformat(os.environ.get("TORB_NOW", "")).astimezone(dt.timezone.utc)
+except ValueError:
+    NOW = dt.datetime.now(dt.timezone.utc)
+
+TEHRAN = ZoneInfo("Asia/Tehran")
+WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٬٫", "0123456789,.")
 STOP_WORDS = {
@@ -40,8 +47,15 @@ def normalize_digits(value):
     return (value or "").translate(PERSIAN_DIGITS).replace("٬", ",")
 
 
+def normalize_fa(value):
+    """Normalize common Arabic/Persian spelling differences for search only."""
+    return (value or "").replace("ي", "ی").replace("ى", "ی").replace("ك", "ک") \
+        .replace("ۀ", "ه").replace("ة", "ه").replace("ـ", "") \
+        .replace("\u200c", " ").replace("\u200f", "").strip().lower()
+
+
 def parse_money(message):
-    text = normalize_digits(message).replace(",", "")
+    text = normalize_fa(normalize_digits(message)).replace(",", "")
     values = []
     for match in re.finditer(r"(\d+(?:\.\d+)?)\s*(میلیون|میلیارد|هزار|m|k)?", text, re.I):
         number = float(match.group(1))
@@ -79,6 +93,31 @@ def parse_json(value, default):
         return default
 
 
+def shop_hours_status(value, now=None):
+    """Return a human-readable, honest status from the dataset's weekly hours."""
+    now = now or dt.datetime.now(TEHRAN)
+    hours = parse_json(value, {})
+    if not isinstance(hours, dict):
+        return {"key": "unknown", "label": "ساعت کاری ثبت نشده", "tone": "muted"}
+    day = hours.get(WEEKDAY_KEYS[now.weekday()]) or {}
+    if day.get("status") == "closed":
+        return {"key": "closed", "label": "امروز تعطیل ثبت شده", "tone": "closed"}
+    if day.get("status") != "declared":
+        return {"key": "unknown", "label": "ساعت امروز نامشخص", "tone": "muted"}
+    current = now.hour * 3600 + now.minute * 60 + now.second
+    for shift in day.get("shifts") or []:
+        try:
+            start_h, start_m, start_s = [int(part) for part in shift.get("start_time", "00:00:00").split(":")]
+            end_h, end_m, end_s = [int(part) for part in shift.get("end_time", "00:00:00").split(":")]
+        except (AttributeError, ValueError):
+            continue
+        start = start_h * 3600 + start_m * 60 + start_s
+        end = end_h * 3600 + end_m * 60 + end_s
+        if end <= start:
+            end += 24 * 3600
+        if start <= current <= end:
+            return {"key": "open", "label": "طبق ساعت ثبت‌شده باز است", "tone": "open"}
+    return {"key": "closed_now", "label": "خارج از ساعت ثبت‌شده", "tone": "closed"}
 def freshness(iso_value):
     if not iso_value:
         return {"label": "زمان تغییر قیمت ثبت نشده", "days": None, "tone": "muted"}
@@ -98,18 +137,19 @@ def freshness(iso_value):
 
 def safe_fts_tokens(text):
     tokens = []
-    for token in re.findall(r"[\w\u0600-\u06ff]+", normalize_digits(text).lower()):
+    normalized = normalize_fa(normalize_digits(text))
+    for token in re.findall(r"[\w\u0600-\u06ff]+", normalized):
         if len(token) > 1 and token not in STOP_WORDS and not token.isdigit():
             tokens.append(token.replace('"', ""))
     return tokens[:8]
 
 
 def parse_request(message, locations):
-    text = normalize_digits(message)
+    text = normalize_fa(normalize_digits(message))
     budget = parse_money(text)
     location = None
     for candidate in locations:
-        if candidate and candidate in text:
+        if candidate and normalize_fa(candidate) in text:
             location = candidate
             break
     radius = None
@@ -120,12 +160,18 @@ def parse_request(message, locations):
     if location:
         location_words = set(safe_fts_tokens(location))
         tokens = [token for token in tokens if token not in location_words and token != location]
+    requirements = {
+        "fast_delivery": any(term in text for term in ("ارسال فوری", "فوری")),
+        "installment": any(term in text for term in ("قسطی", "اقساط", "ترب پی")),
+        "warranty": "گارانتی" in text,
+    }
     return {
         "raw": message,
         "budget_max": budget,
         "location": location,
         "radius_km": radius or 8.0,
         "tokens": tokens,
+        "requirements": requirements,
         "intent": "compare" if "مقایسه" in text else "search",
     }
 
@@ -171,7 +217,7 @@ class Catalog:
             """
             CREATE TABLE products(product_id TEXT PRIMARY KEY,title TEXT,brand TEXT,category TEXT,model TEXT,image_urls TEXT,specs TEXT);
             CREATE TABLE shops(shop_id TEXT PRIMARY KEY,name TEXT,address TEXT,category_names TEXT,contacts TEXT,instagram TEXT,lat REAL,lon REAL,location_label TEXT,payment_options TEXT,supports_fast_delivery INTEGER,website_url TEXT,weekly_hours TEXT);
-            CREATE TABLE offers(offer_id TEXT PRIMARY KEY,product_id TEXT,shop_id TEXT,price_toman REAL,seller_title TEXT,description TEXT,warranty TEXT,last_price_changed_at TEXT);
+            CREATE TABLE offers(offer_id TEXT PRIMARY KEY,product_id TEXT,shop_id TEXT,price_toman REAL,seller_title TEXT,description TEXT,warranty TEXT,last_price_changed_at TEXT,price_valid INTEGER DEFAULT 1,price_quality TEXT DEFAULT 'valid');
             """
         )
         products = [
@@ -188,17 +234,17 @@ class Catalog:
             ("s3", "فروشگاه نمونه بهارستان", "بهارستان، مرکز خرید نمونه", "[]", "[]", None, 35.687, 51.423, "بهارستان", "[]", 1, None, "{}"),
         ]
         offers = [
-            ("o1", "p1", "s1", 18900000, "A55 256GB", "", "۱۸ ماه", "2026-10-18T08:00:00+00:00"),
-            ("o2", "p1", "s2", 18200000, "A55 256GB", "", "۱۸ ماه", "2026-10-15T08:00:00+00:00"),
-            ("o3", "p2", "s2", 14900000, "Redmi Note 13 Pro", "", "۱۸ ماه", "2026-10-17T08:00:00+00:00"),
-            ("o4", "p3", "s1", 5200000, "WH-CH720N", "", "۱۲ ماه", "2026-10-10T08:00:00+00:00"),
-            ("o5", "p4", "s3", 31500000, "IdeaPad Slim 3", "", "۱۸ ماه", "2026-10-12T08:00:00+00:00"),
-            ("o6", "p5", "s3", 4200000, "C300", "", "۱۲ ماه", "2026-09-30T08:00:00+00:00"),
-            ("o7", "p6", "s3", 880000, "کابل ۲.۵", "", None, "2026-10-01T08:00:00+00:00"),
+            ("o1", "p1", "s1", 18900000, "A55 256GB", "", "۱۸ ماه", "2026-10-18T08:00:00+00:00", 1, "valid"),
+            ("o2", "p1", "s2", 18200000, "A55 256GB", "", "۱۸ ماه", "2026-10-15T08:00:00+00:00", 1, "valid"),
+            ("o3", "p2", "s2", 14900000, "Redmi Note 13 Pro", "", "۱۸ ماه", "2026-10-17T08:00:00+00:00", 1, "valid"),
+            ("o4", "p3", "s1", 5200000, "WH-CH720N", "", "۱۲ ماه", "2026-10-10T08:00:00+00:00", 1, "valid"),
+            ("o5", "p4", "s3", 31500000, "IdeaPad Slim 3", "", "۱۸ ماه", "2026-10-12T08:00:00+00:00", 1, "valid"),
+            ("o6", "p5", "s3", 4200000, "C300", "", "۱۲ ماه", "2026-09-30T08:00:00+00:00", 1, "valid"),
+            ("o7", "p6", "s3", 880000, "کابل ۲.۵", "", None, "2026-10-01T08:00:00+00:00", 1, "valid"),
         ]
         self.conn.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?)", products)
         self.conn.executemany("INSERT INTO shops VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", shops)
-        self.conn.executemany("INSERT INTO offers VALUES (?,?,?,?,?,?,?,?)", offers)
+        self.conn.executemany("INSERT INTO offers VALUES (?,?,?,?,?,?,?,?,?,?)", offers)
         self.conn.commit()
 
     def meta(self):
@@ -219,18 +265,24 @@ class Catalog:
                 "GROUP BY category ORDER BY count(*) DESC LIMIT 16"
             )
         ]
+        valid_offers = self.conn.execute(
+            "SELECT count(*) FROM offers WHERE price_valid=1"
+        ).fetchone()[0] if not self.sample_mode else counts["offers"]
+        flagged_offers = counts["offers"] - valid_offers
         return {
             **counts,
+            "valid_offers": valid_offers,
+            "flagged_offers": flagged_offers,
             "sample_mode": self.sample_mode,
             "locations": locations,
             "categories": categories,
-            "dataset_note": "قیمت‌ها از خروجی CSV چالش ترب گرفته شده‌اند؛ موجودی لحظه‌ای نیست.",
+            "dataset_note": "قیمت معتبر یعنی عدد ثبت‌شده بین ۱٬۰۰۰ تا ۱٬۰۰۰٬۰۰۰٬۰۰۰٬۰۰۰ تومان؛ موجودی لحظه‌ای نیست.",
         }
 
     def _candidate_rows(self, parsed, sort, limit=80):
         terms = parsed.get("tokens") or []
         params = []
-        where = ["o.price_toman IS NOT NULL", "o.price_toman > 0"]
+        where = ["o.price_valid = 1"]
         if parsed.get("budget_max"):
             where.append("o.price_toman <= ?")
             params.append(parsed["budget_max"])
@@ -271,7 +323,7 @@ class Catalog:
             return []
 
     def _offers(self, product_id, parsed, center):
-        clauses = ["o.product_id=?", "o.price_toman IS NOT NULL", "o.price_toman > 0"]
+        clauses = ["o.product_id=?", "o.price_valid = 1"]
         params = [product_id]
         if parsed.get("budget_max"):
             clauses.append("o.price_toman <= ?")
@@ -282,7 +334,7 @@ class Catalog:
         rows = self.conn.execute(
             "SELECT o.offer_id,o.price_toman,o.seller_title,o.warranty,o.last_price_changed_at,"
             "s.shop_id,s.name AS shop_name,s.address,s.location_label,s.lat,s.lon,"
-            "s.contacts,s.payment_options,s.supports_fast_delivery,s.weekly_hours "
+            "s.contacts,s.payment_options,s.supports_fast_delivery,s.weekly_hours,s.website_url "
             "FROM offers o JOIN shops s ON s.shop_id=o.shop_id WHERE " + " AND ".join(clauses) +
             " ORDER BY o.price_toman ASC LIMIT 12",
             params,
@@ -298,6 +350,11 @@ class Catalog:
             item["contacts"] = parse_json(item.get("contacts"), [])
             item["payment_options"] = parse_json(item.get("payment_options"), [])
             item["weekly_hours"] = parse_json(item.get("weekly_hours"), {})
+            item["open_status"] = shop_hours_status(json.dumps(item["weekly_hours"], ensure_ascii=False))
+            item["fast_delivery"] = {
+                1: {"key": "yes", "label": "ارسال فوری اعلام شده", "tone": "fresh"},
+                0: {"key": "no", "label": "ارسال فوری اعلام نشده", "tone": "muted"},
+            }.get(item.get("supports_fast_delivery"), {"key": "unknown", "label": "ارسال فوری نامشخص", "tone": "muted"})
             result.append(item)
         if center and parsed.get("radius_km"):
             within = [item for item in result if item["distance_km"] is None or item["distance_km"] <= parsed["radius_km"]]
@@ -346,7 +403,30 @@ class Catalog:
                 if "هدفون" in terms and "هدفون" in category:
                     score += 8
                 if "لپ" in terms and "لپ تاپ" in category:
-                    score += 8
+                    score += 18
+                if "لپ" in terms and "تاپ" in terms and category.strip() == "لپ تاپ و نوت بوک":
+                    score += 35
+                if "لپ" in terms and "تاپ" in terms and any(word in category for word in ("کیف", "شارژر", "لوازم جانبی", "پایه", "باتری", "فن", "کابل", "محافظ", "رم")):
+                    score -= 34
+                if "موتور" in terms and "موتور برق" in category:
+                    score += 22
+                if "موتور" in terms and "برق" in terms and category.strip() == "ژنراتور و موتور برق":
+                    score += 35
+                if "موتور" in terms and "برق" in terms and any(word in category for word in ("قطعه", "لوازم یدکی", "روغن", "باتری")):
+                    score -= 28
+                if "موتور" in terms and "برق" in terms:
+                    if "موتور برق" in title:
+                        score += 40
+                    motor_accessory_words = ("ولت متر", "هواکش", "رگولاتور", "پایه", "کاربراتور", "سر سیلندر", "سرشمع", "کائوچویی", "لاستیک", "شیر بنزین", "سوییچ", "واشر", "پیچ", "فیلتر", "لوازم یدکی", "قطعه")
+                    if any(word in title for word in motor_accessory_words):
+                        score -= 120
+                if "ژنراتور" in terms and "ژنراتور" in category:
+                    score += 18
+                if "دوربین" in terms and "دوربین مدار بسته" in category:
+                    score += 16
+                accessory_categories = ("لوازم جانبی", "کیف و کاور", "پایه", "کابل", "باتری", "شارژر", "محافظ")
+                if any(part in category for part in accessory_categories) and any(term in terms for term in ("گوشی", "لپ", "دوربین")):
+                    score -= 16
                 return (score, -float(row["best_price"] or 0))
             rows = sorted(rows, key=relevance, reverse=True)
         items = []
@@ -359,6 +439,8 @@ class Catalog:
             item["image_url"] = product_image(row["image_urls"])
             item["offers"] = offers
             item["specs"] = parse_json(row["specs"], [])
+            item["valid_offer_count"] = len(offers)
+            item["price_confidence"] = "چند آفر معتبر" if len(offers) > 1 else "یک آفر معتبر"
             item["reasons"] = []
             if offers and offers[0]["price_toman"] == item["best_price"]:
                 item["reasons"].append("کمترین قیمت ثبت‌شده در داده")
@@ -368,9 +450,20 @@ class Catalog:
                 item["reasons"].append("قیمت تازه‌تر")
             if offers and offers[0].get("supports_fast_delivery"):
                 item["reasons"].append("ارسال فوری اعلام‌شده")
+            if offers and offers[0].get("open_status", {}).get("key") == "open":
+                item["reasons"].append("طبق ساعت ثبت‌شده باز است")
+            if parsed.get("requirements", {}).get("warranty") and any(offer.get("warranty") for offer in offers):
+                item["reasons"].append("گارانتی ثبت‌شده")
+            if parsed.get("requirements", {}).get("installment") and any(offer.get("payment_options") for offer in offers):
+                item["reasons"].append("گزینه‌ی پرداخت ثبت شده")
             items.append(item)
             if len(items) >= 24:
                 break
+        requirements = parsed.get("requirements", {})
+        if requirements.get("fast_delivery"):
+            items.sort(key=lambda item: any(offer.get("supports_fast_delivery") == 1 for offer in item.get("offers", [])), reverse=True)
+        if requirements.get("installment"):
+            items.sort(key=lambda item: any(offer.get("payment_options") for offer in item.get("offers", [])), reverse=True)
         return {"query": parsed, "results": items, "total": len(items), "meta": self.meta()}
 
 
@@ -385,18 +478,18 @@ def agent_reply(message, filters=None, selected_ids=None):
     count = result["total"]
     plan = [
         {"id": "intent", "label": "فهم نیاز", "detail": "محصول، بودجه، محدوده و شرط مراجعه استخراج شد.", "state": "done"},
-        {"id": "retrieve", "label": "جست‌وجوی ترب", "detail": "محصول‌ها و آفرهای واقعی دیتاست به هم وصل شدند.", "state": "done"},
-        {"id": "rank", "label": "رتبه‌بندی شفاف", "detail": "قیمت، تازگی، فاصله و شرایط فروشنده امتیاز گرفتند.", "state": "done"},
+        {"id": "retrieve", "label": "اتصال به دیتاست", "detail": "محصول، آفر و فروشگاه از snapshot رسمی چالش به هم وصل شدند.", "state": "done"},
+        {"id": "rank", "label": "رتبه‌بندی شفاف", "detail": "قیمت معتبر، تازگی، فاصله، ساعت کاری و شرایط فروشنده امتیاز گرفتند.", "state": "done"},
         {"id": "next", "label": "قدم بعدی", "detail": "مقایسه یا انتخاب فروشنده برای مراجعه آماده است.", "state": "done"},
     ]
     if count:
         first = result["results"][0]
-        answer = f"برای «{message.strip()}» {count} گزینه پیدا کردم. کمترین قیمت ثبت‌شده از {first['best_price']:,} تومان شروع می‌شود."
+        answer = f"برای «{message.strip()}» {count} گزینه با قیمت معتبر پیدا کردم. کمترین قیمت ثبت‌شده از {first['best_price']:,} تومان شروع می‌شود."
         if parsed.get("location"):
             answer += f" نتیجه‌ها را روی محدوده‌ی {parsed['location']} محدود کردم."
         if parsed.get("budget_max"):
             answer += f" سقف بودجه‌ی {int(parsed['budget_max']):,} تومان هم اعمال شد."
-        answer += " قیمت و موجودی لحظه‌ای نیست؛ قبل از حرکت، تماس با فروشنده را پیشنهاد می‌کنم."
+        answer += " قیمت snapshot است و موجودی لحظه‌ای را تضمین نمی‌کند؛ قبل از حرکت، ساعت کاری و تماس با فروشنده را بررسی کن."
     else:
         answer = "با این ترکیب محدودیت نتیجه‌ی قابل اتکا پیدا نکردم. می‌توانی بودجه، محدوده یا عبارت محصول را کمی بازتر کنی."
     return {
@@ -414,6 +507,7 @@ def agent_reply(message, filters=None, selected_ids=None):
             "catalog_rows": result["meta"],
             "selected_ids": selected_ids,
             "freshness_policy": "آخرین زمان تغییر قیمت نمایش داده می‌شود؛ موجودی تأیید نشده تلقی می‌شود.",
+            "price_policy": "قیمت‌های خالی، کمتر از ۱٬۰۰۰ یا بیشتر از ۱٬۰۰۰٬۰۰۰٬۰۰۰٬۰۰۰ تومان وارد رتبه‌بندی نمی‌شوند.",
         },
     }
 
