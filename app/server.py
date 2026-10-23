@@ -438,7 +438,7 @@ class Catalog:
             params,
         ).fetchall()
         result = []
-        for semantic_position, row in enumerate(rows):
+        for row in rows:
             item = dict(row)
             item["price_toman"] = int(item["price_toman"])
             item["freshness"] = freshness(item.get("last_price_changed_at"))
@@ -609,7 +609,7 @@ class Catalog:
                 return (score, -float(row["best_price"] or 0))
             rows = sorted(rows, key=relevance, reverse=True)
         items = []
-        for row in rows:
+        for semantic_position, row in enumerate(rows):
             offers = self._offers(row["product_id"], parsed, center)
             if not offers:
                 continue
