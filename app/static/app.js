@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const state = { results: [], selected: new Set(), query: "", view: "map", meta: null, map: null, markers: [], recognition: null };
+  const state = { results: [], selected: new Set(), query: "", view: "map", meta: null, map: null, markers: [], recognition: null, userLocation: null, locationAsked: false, locationCenters: {} };
   const $ = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   const fa = (value) => Number(value || 0).toLocaleString("fa-IR");
@@ -20,7 +20,37 @@
 
   function currentFilters() {
     const budgetMillions = Number($("budgetInput").value || 0);
-    return { budget_max: budgetMillions ? String(budgetMillions * 1000000) : "", location: $("locationSelect").value, radius_km: $("radiusInput").value, sort: $("sortSelect").value, lat: "35.694", lon: "51.412" };
+    const selectedLocation = $("locationSelect").value;
+    const center = state.userLocation || state.locationCenters[selectedLocation] || null;
+    return { budget_max: budgetMillions ? String(budgetMillions * 1000000) : "", location: selectedLocation, radius_km: $("radiusInput").value, sort: $("sortSelect").value, lat: center ? String(center.lat) : "", lon: center ? String(center.lon) : "" };
+  }
+
+  function setLocationStatus(text, active) {
+    const status = $("locationStatus");
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle("active", Boolean(active));
+  }
+
+  function requestLocation(force) {
+    if (!force && state.locationAsked) return Promise.resolve(Boolean(state.userLocation));
+    state.locationAsked = true;
+    if (!navigator.geolocation) {
+      setLocationStatus("موقعیت دستگاه در دسترس نیست؛ محله را از فیلترها انتخاب کن.", false);
+      return Promise.resolve(false);
+    }
+    setLocationStatus("در حال دریافت موقعیت برای پیدا کردن گزینه‌های نزدیک‌تر…", false);
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition((position) => {
+        state.userLocation = { lat: position.coords.latitude, lon: position.coords.longitude };
+        setLocationStatus("موقعیت شما فعال شد؛ فاصله‌ی فروشنده‌ها در رتبه‌بندی حساب می‌شود.", true);
+        resolve(true);
+      }, () => {
+        state.userLocation = null;
+        setLocationStatus("موقعیت دستگاه در دسترس نبود؛ محله را از فیلترها انتخاب کن.", false);
+        resolve(false);
+      }, { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 });
+    });
   }
 
   function resultTitle(query, total) {
@@ -42,11 +72,12 @@
     const reasons = (item.reasons || []).slice(0, 3).map((reason) => '<span class="reason-chip">' + escapeHtml(reason.replace(/ثبت‌شده در داده|طبق ساعت ثبت‌شده|اعلام‌شده/g, "").replace(/\s{2,}/g, " ").trim()) + "</span>").join("");
     const selected = state.selected.has(item.product_id);
     const preferred = state.results.length && state.results[0].product_id === item.product_id ? '<span class="reason-chip preferred-chip">ترجیح تربچه</span>' : "";
+    const proximity = item.nearest_distance_km != null ? '<span class="reason-chip distance-chip">حدود ' + Number(item.nearest_distance_km).toLocaleString("fa-IR", { maximumFractionDigits: 1 }) + ' کیلومتر تا شما</span>' : "";
     return '<article class="product-card ' + (selected ? "selected" : "") + '" data-card="' + escapeHtml(item.product_id) + '">' +
       '<div class="card-top">' + image + '<button class="compare-check ' + (selected ? "checked" : "") + '" data-compare="' + escapeHtml(item.product_id) + '" aria-label="افزودن به مقایسه">' + (selected ? "✓" : "") + '</button><span class="card-fresh ' + escapeHtml(fresh.tone) + '">' + escapeHtml(fresh.label) + '</span></div>' +
       '<div class="card-body"><div class="card-category">' + escapeHtml(item.category || "محصول") + '</div><h3 class="card-title">' + escapeHtml(item.title) + '</h3>' +
       '<div class="price-row"><div><span class="price-value">' + money(item.best_price) + '</span><span class="price-unit">تومان</span><small class="confidence-label">' + escapeHtml(item.price_confidence || "قیمت قابل مقایسه") + '</small></div><span class="offer-count">' + fa(item.shop_count) + ' فروشنده</span></div>' +
-      '<div class="reason-list">' + preferred + reasons + '</div><button class="card-action" data-detail="' + escapeHtml(item.product_id) + '" type="button">دیدن فروشنده‌ها و جزئیات <span>←</span></button></div></article>';
+      '<div class="reason-list">' + preferred + proximity + reasons + '</div><button class="card-action" data-detail="' + escapeHtml(item.product_id) + '" type="button">دیدن فروشنده‌ها و جزئیات <span>←</span></button></div></article>';
   }
 
   function renderResults(payload, query) {
@@ -66,7 +97,7 @@
     }
     $("evidenceBanner").hidden = false;
     const valid = payload.meta && payload.meta.valid_offers ? fa(payload.meta.valid_offers) : "داده‌های معتبر";
-    $("evidenceText").textContent = "تربچه از " + valid + " قیمت معتبر، فاصله و شرایط فروشنده را با هم مقایسه کرده است.";
+    $("evidenceText").textContent = "تربچه از " + valid + " قیمت معتبر، فاصله و شرایط فروشنده را با هم مقایسه کرده است." + (payload.ranking_note ? " " + payload.ranking_note : "");
     grid.innerHTML = state.results.map(cardHtml).join("");
     grid.querySelectorAll("[data-compare]").forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); toggleCompare(button.dataset.compare); }));
     grid.querySelectorAll("[data-detail]").forEach((button) => button.addEventListener("click", (event) => { event.stopPropagation(); showProduct(button.dataset.detail); }));
@@ -127,6 +158,7 @@
     const q = (query || $("searchInput").value || "").trim();
     if (!q) return;
     $("searchInput").value = q;
+    await requestLocation(false);
     const params = new URLSearchParams({ q });
     const filters = currentFilters();
     Object.keys(filters).forEach((key) => { if (filters[key] !== "") params.set(key, filters[key]); });
@@ -168,7 +200,7 @@
       const response = await fetch("/api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, filters: currentFilters(), selected_ids: Array.from(state.selected) }) });
       const payload = await response.json();
       appendMessage("agent", payload.reply || "نتیجه آماده است.");
-      renderResults({ results: payload.results || [], meta: payload.evidence && payload.evidence.catalog_rows }, message);
+      renderResults({ results: payload.results || [], meta: payload.evidence && payload.evidence.catalog_rows, ranking_note: payload.ranking_note }, message);
       $("filterPanel").classList.add("compact");
       if (payload.suggestions) {
         $("assistantSuggestions").innerHTML = payload.suggestions.slice(0, 3).map((item) => '<button data-prompt="' + escapeHtml(item) + '" type="button">' + escapeHtml(item) + '</button>').join("");
@@ -228,7 +260,7 @@
     try {
       const meta = await (await fetch("/api/meta")).json(); state.meta = meta;
       $("catalogStat").textContent = fa(meta.products) + " محصول · " + fa(meta.shops) + " فروشگاه";
-      (meta.locations || []).forEach((location) => { const option = document.createElement("option"); option.value = location.name; option.textContent = location.name + " (" + fa(location.count) + ")"; $("locationSelect").appendChild(option); });
+      (meta.locations || []).forEach((location) => { state.locationCenters[location.name] = { lat: location.lat, lon: location.lon }; const option = document.createElement("option"); option.value = location.name; option.textContent = location.name + " (" + fa(location.count) + ")"; $("locationSelect").appendChild(option); });
     } catch (error) { $("catalogStat").textContent = "حالت نمونه"; }
   }
 
@@ -244,10 +276,12 @@
   }
 
   $("searchForm").addEventListener("submit", (event) => { event.preventDefault(); search(); });
+  $("locateButton").addEventListener("click", async () => { const active = await requestLocation(true); if (active && state.query) search(state.query); });
   $("assistantForm").addEventListener("submit", (event) => { event.preventDefault(); askAgent(); });
   $("budgetInput").addEventListener("input", () => { const value = Number($("budgetInput").value); $("budgetValue").textContent = value ? "تا " + fa(value) + " میلیون" : "بدون محدودیت"; });
   $("radiusInput").addEventListener("input", () => { $("radiusValue").textContent = fa($("radiusInput").value); });
-  ["budgetInput", "locationSelect", "radiusInput", "sortSelect"].forEach((id) => $(id).addEventListener("change", () => { if (state.query) search(state.query); }));
+  ["budgetInput", "radiusInput", "sortSelect"].forEach((id) => $(id).addEventListener("change", () => { if (state.query) search(state.query); }));
+  $("locationSelect").addEventListener("change", () => { state.userLocation = null; const name = $("locationSelect").value; setLocationStatus(name ? "محدوده‌ی «" + name + "» برای اولویت فاصله انتخاب شد." : "برای پیشنهاد نزدیک‌تر، موقعیتت را بده یا محله را انتخاب کن.", Boolean(name)); if (state.query) search(state.query); });
   $("resetFilters").addEventListener("click", () => { $("budgetInput").value = 0; $("budgetValue").textContent = "بدون محدودیت"; $("locationSelect").value = ""; $("radiusInput").value = 8; $("radiusValue").textContent = "۸"; $("sortSelect").value = "relevance"; if (state.query) search(state.query); });
   $("filterToggle").addEventListener("click", () => $("filterPanel").classList.toggle("compact"));
   $("clearCompare").addEventListener("click", () => { state.selected.clear(); updateCompareTray(); renderResults({ results: state.results, meta: state.meta }, state.query); });

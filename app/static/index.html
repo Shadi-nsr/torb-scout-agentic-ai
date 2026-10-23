@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=6">
 </head>
 <body>
   <div class="app-shell">
@@ -46,6 +46,7 @@
           <button type="button" data-prompt="یک گزینه‌ی اقتصادی نزدیک شیخ هادی">نزدیک شیخ هادی</button>
         </div>
         <div class="search-help"><span>برای جست‌وجو کلید `Enter` را بزن</span><span id="searchState" hidden>نتایج تازه آماده شد</span></div>
+        <div class="location-tools"><button id="locateButton" type="button" title="اجازه‌ی موقعیت برای پیشنهاد نزدیک‌تر">⌖ نزدیک من</button><span id="locationStatus" aria-live="polite">برای پیشنهاد نزدیک‌تر، موقعیتت را بده یا محله را انتخاب کن.</span></div>
       </section>
 
       <section class="workspace">
